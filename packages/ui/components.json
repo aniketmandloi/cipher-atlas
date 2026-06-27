@@ -11,14 +11,16 @@
     "prefix": ""
   },
   "iconLibrary": "lucide",
+  "menuColor": "default",
+  "menuAccent": "subtle",
   "aliases": {
     "components": "@cipher-atlas/ui/components",
     "utils": "@cipher-atlas/ui/lib/utils",
-    "hooks": "@cipher-atlas/ui/hooks",
+    "ui": "@cipher-atlas/ui/components",
     "lib": "@cipher-atlas/ui/lib",
-    "ui": "@cipher-atlas/ui/components"
+    "hooks": "@cipher-atlas/ui/hooks"
   },
-  "menuColor": "default",
-  "menuAccent": "subtle",
-  "registries": {}
+  "registries": {
+    "@beui": "https://beui.dev/r/{name}.json"
+  }
 }
