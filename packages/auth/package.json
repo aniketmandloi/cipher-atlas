@@ -1,0 +1,27 @@
+{
+  "name": "@cipher-atlas/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@better-auth/expo": "catalog:",
+    "@cipher-atlas/db": "workspace:*",
+    "@cipher-atlas/env": "workspace:*",
+    "@polar-sh/better-auth": "catalog:",
+    "@polar-sh/sdk": "^0.47.1",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cipher-atlas/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

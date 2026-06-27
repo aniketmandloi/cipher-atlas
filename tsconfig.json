@@ -1,0 +1,3 @@
+{
+  "extends": "@cipher-atlas/config/tsconfig.base.json"
+}

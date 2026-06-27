@@ -1,0 +1,29 @@
+{
+  "name": "@cipher-atlas/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@cipher-atlas/auth": "workspace:*",
+    "@cipher-atlas/db": "workspace:*",
+    "@cipher-atlas/env": "workspace:*",
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "@types/pg": "^8.16.0",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cipher-atlas/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
