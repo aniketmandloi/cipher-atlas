@@ -48,3 +48,17 @@ export * from "./scroll-reveal";
 
 // Shared primitive (used internally by MagneticButton, also useful standalone)
 export * from "./magnetic";
+
+// Blocks
+export * from "./swap";
+export * from "./dynamic-island";
+export * from "./command-palette";
+export * from "./expandable-action-bar";
+export * from "./overflow-actions";
+export * from "./expandable-tabs";
+export * from "./swipeable-list";
+export * from "./file-upload";
+export * from "./prediction-market";
+export * from "./otp-input";
+export * from "./bloom-menu";
+export * from "./not-found";

@@ -9,6 +9,7 @@
     "./components/*": "./src/components/*.tsx",
     "./components/motion": "./src/components/motion/index.ts",
     "./components/motion/*": "./src/components/motion/*/index.tsx",
+    "./components/motion/not-found/*": "./src/components/motion/not-found/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
     "./postcss.config": "./postcss.config.mjs"
   },
