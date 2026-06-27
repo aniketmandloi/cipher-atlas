@@ -15,6 +15,8 @@ import {
 } from "@cipher-atlas/ui/components/motion";
 import { cn } from "@cipher-atlas/ui/lib/utils";
 
+import { authClient } from "@/lib/auth-client";
+import UserMenu from "@/components/user-menu";
 import {
   brand,
   categories,
@@ -43,6 +45,8 @@ const cta = "h-10 rounded-full px-5 text-sm";
 const ctaGhost = "h-10 rounded-full px-5 text-sm";
 
 export default function Home() {
+  const { data: session } = authClient.useSession();
+
   return (
     <div className="min-h-svh bg-background font-sans text-foreground selection:bg-foreground/15">
       <ScrollProgress />
@@ -64,19 +68,30 @@ export default function Home() {
                 {l.label}
               </a>
             ))}
+            {session && (
+              <Link href="/dashboard" className="hover:text-foreground">
+                Dashboard
+              </Link>
+            )}
           </nav>
           <div className="flex items-center gap-4">
-            <Link
-              href={nav.signIn.href}
-              className="hidden text-sm text-muted-foreground hover:text-foreground sm:block"
-            >
-              {nav.signIn.label}
-            </Link>
-            <Magnetic strength={0.2}>
-              <a href={nav.cta.href} className={cn(buttonVariants(), cta)}>
-                {nav.cta.label}
-              </a>
-            </Magnetic>
+            {session ? (
+              <UserMenu />
+            ) : (
+              <>
+                <Link
+                  href={nav.signIn.href}
+                  className="hidden text-sm text-muted-foreground hover:text-foreground sm:block"
+                >
+                  {nav.signIn.label}
+                </Link>
+                <Magnetic strength={0.2}>
+                  <a href={nav.cta.href} className={cn(buttonVariants(), cta)}>
+                    {nav.cta.label}
+                  </a>
+                </Magnetic>
+              </>
+            )}
           </div>
         </div>
       </header>
