@@ -7,6 +7,9 @@
     "./globals.css": "./src/styles/globals.css",
     "./lib/*": "./src/lib/*.ts",
     "./components/*": "./src/components/*.tsx",
+    "./components/motion": "./src/components/motion/index.ts",
+    "./components/motion/*": "./src/components/motion/*/index.tsx",
+    "./components/motion/not-found/*": "./src/components/motion/not-found/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
     "./postcss.config": "./postcss.config.mjs"
   },
@@ -21,6 +24,8 @@
     "next-themes": "catalog:",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "lenis": "catalog:",
+    "motion": "catalog:",
     "shadcn": "^3.6.2",
     "sonner": "catalog:",
     "tailwind-merge": "^3.3.1",

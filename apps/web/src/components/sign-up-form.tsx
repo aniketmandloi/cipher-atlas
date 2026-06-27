@@ -1,6 +1,7 @@
 import { Button } from "@cipher-atlas/ui/components/button";
 import { Input } from "@cipher-atlas/ui/components/input";
 import { Label } from "@cipher-atlas/ui/components/label";
+import { Magnetic, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -52,8 +53,11 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
   }
 
   return (
-    <div className="mx-auto w-full mt-10 max-w-md p-6">
-      <h1 className="mb-6 text-center text-3xl font-bold">Create Account</h1>
+    <div className="w-full">
+      <ScrollReveal delay={0}>
+        <p className="text-sm text-muted-foreground">Get started</p>
+        <h1 className="mt-2 font-display text-3xl font-medium tracking-tight">Create account</h1>
+      </ScrollReveal>
 
       <form
         onSubmit={(e) => {
@@ -61,35 +65,40 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           e.stopPropagation();
           form.handleSubmit();
         }}
-        className="space-y-4"
+        className="mt-8 space-y-5"
       >
-        <div>
+        <ScrollReveal delay={0.08}>
           <form.Field name="name">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Name</Label>
+                <Label htmlFor={field.name} className="text-sm text-muted-foreground">
+                  Name
+                </Label>
                 <Input
                   id={field.name}
                   name={field.name}
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
+                  className="h-10 rounded-lg border-border bg-transparent"
                 />
                 {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
+                  <p key={error?.message} className="text-xs text-destructive">
                     {error?.message}
                   </p>
                 ))}
               </div>
             )}
           </form.Field>
-        </div>
+        </ScrollReveal>
 
-        <div>
+        <ScrollReveal delay={0.15}>
           <form.Field name="email">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Email</Label>
+                <Label htmlFor={field.name} className="text-sm text-muted-foreground">
+                  Email
+                </Label>
                 <Input
                   id={field.name}
                   name={field.name}
@@ -97,22 +106,25 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
+                  className="h-10 rounded-lg border-border bg-transparent"
                 />
                 {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
+                  <p key={error?.message} className="text-xs text-destructive">
                     {error?.message}
                   </p>
                 ))}
               </div>
             )}
           </form.Field>
-        </div>
+        </ScrollReveal>
 
-        <div>
+        <ScrollReveal delay={0.22}>
           <form.Field name="password">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Password</Label>
+                <Label htmlFor={field.name} className="text-sm text-muted-foreground">
+                  Password
+                </Label>
                 <Input
                   id={field.name}
                   name={field.name}
@@ -120,37 +132,48 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
+                  className="h-10 rounded-lg border-border bg-transparent"
                 />
                 {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
+                  <p key={error?.message} className="text-xs text-destructive">
                     {error?.message}
                   </p>
                 ))}
               </div>
             )}
           </form.Field>
-        </div>
+        </ScrollReveal>
 
-        <form.Subscribe
-          selector={(state) => ({ canSubmit: state.canSubmit, isSubmitting: state.isSubmitting })}
-        >
-          {({ canSubmit, isSubmitting }) => (
-            <Button type="submit" className="w-full" disabled={!canSubmit || isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Sign Up"}
-            </Button>
-          )}
-        </form.Subscribe>
+        <ScrollReveal delay={0.29}>
+          <form.Subscribe
+            selector={(state) => ({ canSubmit: state.canSubmit, isSubmitting: state.isSubmitting })}
+          >
+            {({ canSubmit, isSubmitting }) => (
+              <Magnetic strength={0.2} className="w-full">
+                <Button
+                  type="submit"
+                  className="h-10 w-full rounded-full text-sm"
+                  disabled={!canSubmit || isSubmitting}
+                >
+                  {isSubmitting ? "Creating account…" : "Sign Up"}
+                </Button>
+              </Magnetic>
+            )}
+          </form.Subscribe>
+        </ScrollReveal>
       </form>
 
-      <div className="mt-4 text-center">
-        <Button
-          variant="link"
-          onClick={onSwitchToSignIn}
-          className="text-indigo-600 hover:text-indigo-800"
-        >
-          Already have an account? Sign In
-        </Button>
-      </div>
+      <ScrollReveal delay={0.35}>
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={onSwitchToSignIn}
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Already have an account? <span className="text-foreground">Sign in</span>
+          </button>
+        </div>
+      </ScrollReveal>
     </div>
   );
 }
