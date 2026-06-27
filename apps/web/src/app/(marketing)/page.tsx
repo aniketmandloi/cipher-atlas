@@ -16,6 +16,7 @@ import {
 import { cn } from "@cipher-atlas/ui/lib/utils";
 
 import { authClient } from "@/lib/auth-client";
+import { ModeToggle } from "@/components/mode-toggle";
 import UserMenu from "@/components/user-menu";
 import {
   brand,
@@ -74,7 +75,8 @@ export default function Home() {
               </Link>
             )}
           </nav>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <ModeToggle />
             {session ? (
               <UserMenu />
             ) : (

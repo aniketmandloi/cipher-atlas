@@ -5,6 +5,6 @@ export default function MarketingLayout({
 }>) {
   // Marketing is forced dark for now; a light theme comes later.
   return (
-    <div className="dark min-h-svh bg-background text-foreground">{children}</div>
+    <div className="min-h-svh bg-background text-foreground">{children}</div>
   );
 }
