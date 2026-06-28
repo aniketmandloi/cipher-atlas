@@ -39,9 +39,8 @@ async function validateGitHubCredentials(
   if (response.ok) {
     return {
       status: "valid",
-      connectorStatus: "pending_validation",
-      message:
-        "GitHub token authenticated. Configure scan scope before using this connector for scans.",
+      connectorStatus: "usable",
+      message: "GitHub token is valid for read-only API access.",
     };
   }
 
@@ -87,9 +86,8 @@ async function validateAwsCredentials(credentials: AwsCredentials): Promise<Conn
   if (response.ok) {
     return {
       status: "valid",
-      connectorStatus: "pending_validation",
-      message:
-        "AWS credentials authenticated with STS. Configure scan scope before using this connector for scans.",
+      connectorStatus: "usable",
+      message: "AWS credentials authenticated with read-only STS caller identity access.",
     };
   }
 
