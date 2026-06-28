@@ -33,7 +33,7 @@ export default function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     <motion.aside
       animate={{ width: collapsed ? 64 : 208 }}
       transition={SPRING}
-      className="fixed inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-border bg-background py-6"
+      className="fixed inset-y-0 left-0 z-30 hidden flex-col overflow-hidden border-r border-border bg-background py-6 md:flex"
     >
       {/* Brand */}
       <div className={cn("px-4", collapsed && "flex justify-center px-0")}>
@@ -86,6 +86,7 @@ export default function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
               <NextLink
                 href={to}
                 title={collapsed ? label : undefined}
+                aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative z-10 flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
                   collapsed && "justify-center",

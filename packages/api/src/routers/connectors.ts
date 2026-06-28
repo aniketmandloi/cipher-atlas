@@ -108,8 +108,8 @@ export const connectorsRouter = router({
       });
     }
 
-    const credentials = tryDecryptStoredCredentials(row);
-    if (!credentials) {
+    const rawCredentials = tryDecryptStoredCredentials(row);
+    if (!rawCredentials) {
       const [updated] = await db
         .update(connector)
         .set({
@@ -132,9 +132,34 @@ export const connectorsRouter = router({
       return redactConnector(updated);
     }
 
+    const credentialSchema = row.sourceType === "github" ? githubCredentialSchema : awsCredentialSchema;
+    const parsed = credentialSchema.safeParse(rawCredentials);
+    if (!parsed.success) {
+      const [updated] = await db
+        .update(connector)
+        .set({
+          status: "invalid",
+          lastValidationStatus: "invalid",
+          lastValidationMessage:
+            "Stored connector credentials are malformed. Recreate the connector with fresh credentials.",
+          lastValidatedAt: new Date(),
+        })
+        .where(and(eq(connector.id, row.id), eq(connector.tenantId, tenantScope(ctx.session.user.id))))
+        .returning();
+
+      if (!updated) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Connector validation result could not be saved",
+        });
+      }
+
+      return redactConnector(updated);
+    }
+
     const result = await validateConnectorCredentials({
       sourceType: row.sourceType,
-      credentials,
+      credentials: parsed.data,
     } as ConnectorCredentialInput);
     const [updated] = await db
       .update(connector)

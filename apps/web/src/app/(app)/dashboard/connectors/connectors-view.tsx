@@ -158,7 +158,20 @@ export default function ConnectorsView() {
             <p className="text-sm text-muted-foreground">Loading connectors…</p>
           )}
 
-          {!connectorsQuery.isLoading && connectors.length === 0 && (
+          {connectorsQuery.isError && (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-destructive">Failed to load connectors.</p>
+              <button
+                type="button"
+                onClick={() => void connectorsQuery.refetch()}
+                className="text-sm text-muted-foreground underline hover:text-foreground"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!connectorsQuery.isLoading && !connectorsQuery.isError && connectors.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No connectors yet. Add one below to get started.
             </p>
@@ -249,6 +262,7 @@ export default function ConnectorsView() {
                   <button
                     key={t}
                     type="button"
+                    aria-pressed={sourceType === t}
                     onClick={() => setSourceType(t)}
                     className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                       sourceType === t

@@ -39,8 +39,8 @@ export default function TodosPage() {
     if (newTodoText.trim()) createMutation.mutate({ text: newTodoText });
   };
 
-  const handleToggleTodo = (id: TodoId, completed: boolean) => {
-    toggleMutation.mutate({ id, completed: !completed });
+  const handleToggleTodo = (id: TodoId, nextCompleted: boolean) => {
+    toggleMutation.mutate({ id, completed: nextCompleted });
   };
 
   const handleDeleteTodo = (id: TodoId) => {
@@ -101,7 +101,7 @@ export default function TodosPage() {
                     <div className="flex items-center justify-between py-3.5">
                       <Checkbox
                         checked={todo.completed}
-                        onCheckedChange={() => handleToggleTodo(todo.id, todo.completed)}
+                        onCheckedChange={(checked) => handleToggleTodo(todo.id, checked)}
                         label={todo.text}
                         labelClassName={
                           todo.completed

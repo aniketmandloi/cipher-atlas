@@ -7,7 +7,7 @@ describe("connector validation", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps authenticated GitHub credentials pending until scan scope is configured", async () => {
+  it("marks authenticated GitHub credentials as usable", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
 
     await expect(
@@ -17,13 +17,12 @@ describe("connector validation", () => {
       }),
     ).resolves.toEqual({
       status: "valid",
-      connectorStatus: "pending_validation",
-      message:
-        "GitHub token authenticated. Configure scan scope before using this connector for scans.",
+      connectorStatus: "usable",
+      message: "GitHub token is valid for read-only API access.",
     });
   });
 
-  it("keeps authenticated AWS credentials pending until scan scope is configured", async () => {
+  it("marks authenticated AWS credentials as usable", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
 
     await expect(
@@ -37,9 +36,8 @@ describe("connector validation", () => {
       }),
     ).resolves.toEqual({
       status: "valid",
-      connectorStatus: "pending_validation",
-      message:
-        "AWS credentials authenticated with STS. Configure scan scope before using this connector for scans.",
+      connectorStatus: "usable",
+      message: "AWS credentials authenticated with read-only STS caller identity access.",
     });
   });
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { Button } from "@cipher-atlas/ui/components/motion";
 import { Magnetic, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 
@@ -13,6 +15,7 @@ export default function Dashboard({
   session: typeof authClient.$Infer.Session;
 }) {
   const hasProSubscription = (customerState?.activeSubscriptions?.length ?? 0) > 0;
+  const [billingPending, setBillingPending] = useState(false);
 
   return (
     <div className="mt-12 space-y-10">
@@ -30,16 +33,26 @@ export default function Dashboard({
           {hasProSubscription ? (
             <Button
               size="md"
-              onClick={async () => await authClient.customer.portal()}
+              disabled={billingPending}
+              onClick={async () => {
+                setBillingPending(true);
+                try { await authClient.customer.portal(); }
+                finally { setBillingPending(false); }
+              }}
             >
-              Manage Subscription
+              {billingPending ? "Loading…" : "Manage Subscription"}
             </Button>
           ) : (
             <Button
               size="md"
-              onClick={async () => await authClient.checkout({ slug: "pro" })}
+              disabled={billingPending}
+              onClick={async () => {
+                setBillingPending(true);
+                try { await authClient.checkout({ slug: "pro" }); }
+                finally { setBillingPending(false); }
+              }}
             >
-              Upgrade to Pro
+              {billingPending ? "Loading…" : "Upgrade to Pro"}
             </Button>
           )}
         </Magnetic>

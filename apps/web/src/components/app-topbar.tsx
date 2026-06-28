@@ -35,7 +35,7 @@ export default function AppTopbar({ collapsed }: AppTopbarProps) {
       animate={{ left: collapsed ? 64 : 208 }}
       transition={SPRING}
       initial={false}
-      className="fixed right-0 top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur"
+      className="fixed right-0 top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur max-md:!left-0"
     >
       <motion.span
         key={title}

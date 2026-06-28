@@ -44,6 +44,7 @@ export default function Header() {
             <Magnetic key={String(to)} strength={0.2}>
               <NextLink
                 href={to}
+                aria-current={pathname === String(to) ? "page" : undefined}
                 className={cn(
                   "transition-colors hover:text-foreground",
                   pathname === String(to) && "text-foreground",

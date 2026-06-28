@@ -42,5 +42,6 @@ export function credentialPreview(
 }
 
 function lastFour(value: string): string {
+  if (value.length < 4) return "••••";
   return `••••${value.slice(-4)}`;
 }

@@ -107,10 +107,14 @@ async function validateAwsCredentials(credentials: AwsCredentials): Promise<Conn
 }
 
 async function fetchValidation(input: string, init: RequestInit): Promise<Response | undefined> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    return await fetch(input, init);
+    return await fetch(input, { ...init, signal: controller.signal });
   } catch {
     return undefined;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

@@ -36,9 +36,9 @@ export const connector = pgTable(
       .default("not_validated")
       .notNull(),
     lastValidationMessage: text("last_validation_message"),
-    lastValidatedAt: timestamp("last_validated_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),

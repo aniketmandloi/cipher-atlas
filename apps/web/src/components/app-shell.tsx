@@ -19,7 +19,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <motion.main
         animate={{ paddingLeft: collapsed ? 64 : 208 }}
         transition={SPRING}
-        className="pt-14"
+        className="pt-14 max-md:!pl-0"
       >
         {children}
       </motion.main>
