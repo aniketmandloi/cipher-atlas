@@ -14,6 +14,7 @@
     "@cipher-atlas/auth": "workspace:*",
     "@cipher-atlas/db": "workspace:*",
     "@cipher-atlas/env": "workspace:*",
+    "@cipher-atlas/scan-domain": "workspace:*",
     "@trpc/client": "catalog:",
     "@trpc/server": "catalog:",
     "@types/pg": "^8.16.0",
