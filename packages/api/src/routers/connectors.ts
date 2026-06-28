@@ -21,6 +21,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
+import { tenantScope } from "../tenant";
 
 const createConnectorInput = z.discriminatedUnion("sourceType", [
   z.object({
@@ -182,10 +183,6 @@ export const connectorsRouter = router({
     return redactConnector(updated);
   }),
 });
-
-function tenantScope(userId: string): string {
-  return userId;
-}
 
 async function findTenantConnector(id: string, userId: string): Promise<ConnectorRecord | undefined> {
   const [row] = await db
