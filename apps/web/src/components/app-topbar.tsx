@@ -9,6 +9,7 @@ import UserMenu from "./user-menu";
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard/connectors": "Connectors",
+  "/dashboard/scans": "Scans",
   "/dashboard": "Dashboard",
   "/todos": "Todos",
 };

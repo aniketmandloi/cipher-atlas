@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { Magnetic } from "@cipher-atlas/ui/components/motion";
 import { cn } from "@cipher-atlas/ui/lib/utils";
-import { Cable, ChevronLeft, LayoutDashboard, ListTodo } from "lucide-react";
+import { Cable, ChevronLeft, LayoutDashboard, ListTodo, ScanSearch } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 type Href = Parameters<typeof Link>[0]["href"];
@@ -16,6 +16,7 @@ const brand = { name: "Cipher Atlas", mark: "CA" } as const;
 const links = [
   { to: "/dashboard" as Href, label: "Dashboard", Icon: LayoutDashboard },
   { to: "/dashboard/connectors" as Href, label: "Connectors", Icon: Cable },
+  { to: "/dashboard/scans" as Href, label: "Scans", Icon: ScanSearch },
   { to: "/todos" as Href, label: "Todos", Icon: ListTodo },
 ];
 
