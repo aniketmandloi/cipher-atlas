@@ -80,7 +80,8 @@ async function claimNextScanJob({
         .from(scanJob)
         .where(eq(scanJob.status, "queued"))
         .orderBy(asc(scanJob.queuedAt))
-        .limit(1);
+        .limit(1)
+        .for("update", { skipLocked: true });
 
       if (!nextJob) {
         return null;
@@ -159,6 +160,8 @@ async function completeScanJob(claim: ClaimedScanJob, finishedAt: Date) {
       .set({
         status: "completed",
         completedAt: finishedAt,
+        failedAt: null,
+        failureMessage: null,
         updatedAt: finishedAt,
       })
       .where(and(eq(scanJob.id, claim.scanJobId), eq(scanJob.tenantId, claim.tenantId)));

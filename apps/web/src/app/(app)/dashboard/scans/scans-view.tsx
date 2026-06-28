@@ -125,7 +125,20 @@ export default function ScansView() {
             <p className="text-sm text-muted-foreground">Loading connectors…</p>
           )}
 
-          {!connectorsQuery.isLoading && connectors.length === 0 && (
+          {connectorsQuery.isError && (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-destructive">Failed to load connectors.</p>
+              <button
+                type="button"
+                onClick={() => void connectorsQuery.refetch()}
+                className="text-sm text-muted-foreground underline hover:text-foreground"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!connectorsQuery.isLoading && !connectorsQuery.isError && connectors.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No connectors yet. Add a validated connector before launching a scan.
             </p>

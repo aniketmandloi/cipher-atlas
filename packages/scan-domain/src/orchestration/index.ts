@@ -146,9 +146,7 @@ export function connectorScanEligibility(
 
   return {
     eligible: false,
-    reason: `${connector.displayName} is invalid: ${
-      connector.lastValidationMessage ?? "Revalidate or recreate it before launching a scan."
-    }`,
+    reason: `${connector.displayName} is invalid. Revalidate or recreate it before launching a scan.`,
   };
 }
 

@@ -11,22 +11,34 @@ import {
 } from "@cipher-atlas/scan-domain";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { randomUUID } from "node:crypto";
 
 import { protectedProcedure, router } from "../index";
 import { tenantScope } from "../tenant";
 
 export const scansRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const tenantId = tenantScope(ctx.session.user.id);
-    const rows = await db
-      .select()
-      .from(scanJob)
-      .where(eq(scanJob.tenantId, tenantId))
-      .orderBy(desc(scanJob.createdAt));
+  list: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(100).default(50),
+          offset: z.number().int().min(0).default(0),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = tenantScope(ctx.session.user.id);
+      const rows = await db
+        .select()
+        .from(scanJob)
+        .where(eq(scanJob.tenantId, tenantId))
+        .orderBy(desc(scanJob.createdAt))
+        .limit(input?.limit ?? 50)
+        .offset(input?.offset ?? 0);
 
-    return hydrateScanJobs(rows);
-  }),
+      return hydrateScanJobs(rows);
+    }),
 
   get: protectedProcedure.input(getScanInputSchema).query(async ({ ctx, input }) => {
     const tenantId = tenantScope(ctx.session.user.id);
