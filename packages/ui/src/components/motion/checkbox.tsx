@@ -14,6 +14,7 @@ export interface CheckboxProps {
   disabled?: boolean;
   indeterminate?: boolean;
   label?: string;
+  labelClassName?: string;
   className?: string;
   id?: string;
 }
@@ -24,6 +25,7 @@ export function Checkbox({
   disabled,
   indeterminate,
   label,
+  labelClassName,
   className,
   id: idProp,
 }: CheckboxProps) {
@@ -107,7 +109,7 @@ export function Checkbox({
         </AnimatePresence>
       </motion.button>
       {label ? (
-        <span className={cn("select-none text-sm text-foreground", disabled && "opacity-60")}>
+        <span className={cn("select-none text-sm text-foreground", disabled && "opacity-60", labelClassName)}>
           {label}
         </span>
       ) : null}

@@ -50,6 +50,20 @@ const SIZE_CLASS: Record<ButtonSize, string> = {
   icon: "h-8 w-8 rounded-lg",
 };
 
+/** Generate button-style class names for non-button elements (links, anchors). */
+export function buttonCn(
+  variant: ButtonVariant = "primary",
+  size: ButtonSize = "md",
+  className?: string,
+): string {
+  return cn(
+    "inline-flex items-center justify-center font-medium select-none transition-colors disabled:pointer-events-none disabled:opacity-50",
+    VARIANT_CLASS[variant],
+    SIZE_CLASS[size],
+    className,
+  );
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(
     {

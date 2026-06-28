@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { buttonVariants } from "@cipher-atlas/ui/components/button";
+import { buttonCn } from "@cipher-atlas/ui/components/motion";
 import { cn } from "@cipher-atlas/ui/lib/utils";
 
 export default async function SuccessPage({
@@ -24,7 +24,7 @@ export default async function SuccessPage({
       <div className="mt-10">
         <Link
           href="/dashboard"
-          className={cn(buttonVariants(), "h-10 rounded-full px-5 text-sm")}
+          className={cn(buttonCn(), "h-10 rounded-full px-5 text-sm")}
         >
           Go to Dashboard
         </Link>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { Badge } from "@cipher-atlas/ui/components/badge";
-import { Button } from "@cipher-atlas/ui/components/button";
+import { Button } from "@cipher-atlas/ui/components/motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
 import { Input } from "@cipher-atlas/ui/components/input";
 import { Label } from "@cipher-atlas/ui/components/label";
@@ -18,17 +18,22 @@ type SourceType = "github" | "aws";
 type ConnectorStatus = "pending_validation" | "usable" | "invalid" | "unsupported";
 type ValidationStatus = "not_validated" | "valid" | "invalid" | "unsupported";
 
-function statusVariant(
-  status: ConnectorStatus,
-): "default" | "outline" | "destructive" | "secondary" {
+function statusBadgeProps(status: ConnectorStatus): {
+  variant: "outline" | "destructive" | "secondary";
+  className?: string;
+} {
   switch (status) {
     case "usable":
-      return "default";
+      return {
+        variant: "outline",
+        className:
+          "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+      };
     case "pending_validation":
-      return "secondary";
+      return { variant: "secondary" };
     case "invalid":
     case "unsupported":
-      return "destructive";
+      return { variant: "destructive" };
   }
 }
 
@@ -153,7 +158,9 @@ export default function ConnectorsView() {
             </p>
           )}
 
-          {connectors.map((c) => (
+          {connectors.map((c) => {
+            const { className: badgeCls, ...badgeProps } = statusBadgeProps(c.status);
+            return (
             <Card key={c.id}>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
@@ -165,7 +172,9 @@ export default function ConnectorsView() {
                       {c.sourceType}
                     </p>
                   </div>
-                  <Badge variant={statusVariant(c.status)}>{statusLabel(c.status)}</Badge>
+                  <Badge {...badgeProps} className={`px-2.5 ${badgeCls ?? ""}`}>
+                    {statusLabel(c.status)}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -193,7 +202,7 @@ export default function ConnectorsView() {
                   <Magnetic strength={0.2}>
                     <Button
                       variant="outline"
-                      className="h-8 rounded-full px-4 text-xs"
+                      size="sm"
                       disabled={validateMutation.isPending}
                       onClick={() => validateMutation.mutate({ id: c.id })}
                     >
@@ -206,7 +215,8 @@ export default function ConnectorsView() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       </ScrollReveal>
 
@@ -217,7 +227,7 @@ export default function ConnectorsView() {
             <Magnetic strength={0.25}>
               <Button
                 variant="outline"
-                className="h-10 rounded-full px-5 text-sm"
+                size="md"
                 onClick={() => setShowForm(true)}
               >
                 Add Connector
@@ -345,7 +355,7 @@ export default function ConnectorsView() {
                   <Magnetic strength={0.25}>
                     <Button
                       type="submit"
-                      className="h-10 rounded-full px-5 text-sm"
+                      size="md"
                       disabled={createMutation.isPending}
                     >
                       {createMutation.isPending ? "Creating…" : "Create Connector"}
@@ -354,7 +364,7 @@ export default function ConnectorsView() {
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-10 rounded-full px-5 text-sm"
+                    size="md"
                     onClick={() => {
                       setShowForm(false);
                       setGithubForm(EMPTY_GITHUB_FORM);

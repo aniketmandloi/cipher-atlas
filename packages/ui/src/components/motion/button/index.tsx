@@ -1,4 +1,4 @@
-export { Button } from "./base";
+export { Button, buttonCn } from "./base";
 export type { ButtonProps, ButtonVariant, ButtonSize } from "./base";
 
 export { StatefulButton } from "./stateful";

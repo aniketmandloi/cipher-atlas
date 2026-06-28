@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@cipher-atlas/ui/components/button";
+import { Button } from "@cipher-atlas/ui/components/motion";
 import { Magnetic, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 
 import { authClient } from "@/lib/auth-client";
@@ -29,14 +29,14 @@ export default function Dashboard({
         <Magnetic strength={0.25}>
           {hasProSubscription ? (
             <Button
-              className="h-10 rounded-full px-5 text-sm"
+              size="md"
               onClick={async () => await authClient.customer.portal()}
             >
               Manage Subscription
             </Button>
           ) : (
             <Button
-              className="h-10 rounded-full px-5 text-sm"
+              size="md"
               onClick={async () => await authClient.checkout({ slug: "pro" })}
             >
               Upgrade to Pro
