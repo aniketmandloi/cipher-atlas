@@ -19,7 +19,7 @@ export default async function ConnectorsPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-16">
-      <div className="border-b border-border pb-10">
+      <div className="pb-10">
         <p className="text-sm text-muted-foreground">Connectors</p>
         <h1 className="mt-2 font-display text-4xl font-medium tracking-tight">
           Source Connectors

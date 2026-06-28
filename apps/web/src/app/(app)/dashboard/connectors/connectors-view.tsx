@@ -7,7 +7,7 @@ import { Button } from "@cipher-atlas/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
 import { Input } from "@cipher-atlas/ui/components/input";
 import { Label } from "@cipher-atlas/ui/components/label";
-import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
+import { Magnetic, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -148,11 +148,9 @@ export default function ConnectorsView() {
           )}
 
           {!connectorsQuery.isLoading && connectors.length === 0 && (
-            <div className="border-t border-border pt-6">
-              <p className="text-sm text-muted-foreground">
-                No connectors yet. Add one below to get started.
-              </p>
-            </div>
+            <p className="text-sm text-muted-foreground">
+              No connectors yet. Add one below to get started.
+            </p>
           )}
 
           {connectors.map((c) => (
@@ -192,18 +190,19 @@ export default function ConnectorsView() {
                   </div>
                 </div>
                 <div className="pt-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 rounded-none px-3 text-xs"
-                    disabled={validateMutation.isPending}
-                    onClick={() => validateMutation.mutate({ id: c.id })}
-                  >
-                    {validateMutation.isPending &&
-                    validateMutation.variables?.id === c.id
-                      ? "Validating…"
-                      : "Validate"}
-                  </Button>
+                  <Magnetic strength={0.2}>
+                    <Button
+                      variant="outline"
+                      className="h-8 rounded-full px-4 text-xs"
+                      disabled={validateMutation.isPending}
+                      onClick={() => validateMutation.mutate({ id: c.id })}
+                    >
+                      {validateMutation.isPending &&
+                      validateMutation.variables?.id === c.id
+                        ? "Validating…"
+                        : "Validate"}
+                    </Button>
+                  </Magnetic>
                 </div>
               </CardContent>
             </Card>
@@ -213,15 +212,17 @@ export default function ConnectorsView() {
 
       {/* Add connector */}
       <ScrollReveal delay={0.08}>
-        <div className="border-t border-border pt-8">
+        <div>
           {!showForm ? (
-            <Button
-              variant="outline"
-              className="h-9 rounded-none px-4 text-sm"
-              onClick={() => setShowForm(true)}
-            >
-              Add Connector
-            </Button>
+            <Magnetic strength={0.25}>
+              <Button
+                variant="outline"
+                className="h-10 rounded-full px-5 text-sm"
+                onClick={() => setShowForm(true)}
+              >
+                Add Connector
+              </Button>
+            </Magnetic>
           ) : (
             <div className="max-w-md space-y-6">
               <p className="text-sm font-medium">New Connector</p>
@@ -233,7 +234,7 @@ export default function ConnectorsView() {
                     key={t}
                     type="button"
                     onClick={() => setSourceType(t)}
-                    className={`border px-3 py-1 text-xs transition-colors ${
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                       sourceType === t
                         ? "border-foreground bg-foreground text-background"
                         : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
@@ -245,11 +246,12 @@ export default function ConnectorsView() {
               </div>
 
               <form onSubmit={handleCreate} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="displayName">Display Name</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="displayName" className="text-sm text-muted-foreground">Display Name</Label>
                   <Input
                     id="displayName"
                     placeholder="e.g. My Org GitHub"
+                    className="h-10 rounded-lg border-border bg-transparent"
                     value={sourceType === "github" ? githubForm.displayName : awsForm.displayName}
                     onChange={(e) => {
                       if (sourceType === "github") {
@@ -263,13 +265,14 @@ export default function ConnectorsView() {
                 </div>
 
                 {sourceType === "github" && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="token">Personal Access Token</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="token" className="text-sm text-muted-foreground">Personal Access Token</Label>
                     <Input
                       id="token"
                       type="password"
                       placeholder="ghp_…"
                       autoComplete="off"
+                      className="h-10 rounded-lg border-border bg-transparent"
                       value={githubForm.token}
                       onChange={(e) =>
                         setGithubForm((f) => ({ ...f, token: e.target.value }))
@@ -281,12 +284,13 @@ export default function ConnectorsView() {
 
                 {sourceType === "aws" && (
                   <>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="accessKeyId">Access Key ID</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="accessKeyId" className="text-sm text-muted-foreground">Access Key ID</Label>
                       <Input
                         id="accessKeyId"
                         placeholder="AKIA…"
                         autoComplete="off"
+                        className="h-10 rounded-lg border-border bg-transparent"
                         value={awsForm.accessKeyId}
                         onChange={(e) =>
                           setAwsForm((f) => ({ ...f, accessKeyId: e.target.value }))
@@ -294,12 +298,13 @@ export default function ConnectorsView() {
                         required
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="secretAccessKey">Secret Access Key</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="secretAccessKey" className="text-sm text-muted-foreground">Secret Access Key</Label>
                       <Input
                         id="secretAccessKey"
                         type="password"
                         autoComplete="off"
+                        className="h-10 rounded-lg border-border bg-transparent"
                         value={awsForm.secretAccessKey}
                         onChange={(e) =>
                           setAwsForm((f) => ({ ...f, secretAccessKey: e.target.value }))
@@ -307,23 +312,25 @@ export default function ConnectorsView() {
                         required
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="sessionToken">Session Token (optional)</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="sessionToken" className="text-sm text-muted-foreground">Session Token (optional)</Label>
                       <Input
                         id="sessionToken"
                         type="password"
                         autoComplete="off"
+                        className="h-10 rounded-lg border-border bg-transparent"
                         value={awsForm.sessionToken}
                         onChange={(e) =>
                           setAwsForm((f) => ({ ...f, sessionToken: e.target.value }))
                         }
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="region">Region</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="region" className="text-sm text-muted-foreground">Region</Label>
                       <Input
                         id="region"
                         placeholder="us-east-1"
+                        className="h-10 rounded-lg border-border bg-transparent"
                         value={awsForm.region}
                         onChange={(e) =>
                           setAwsForm((f) => ({ ...f, region: e.target.value }))
@@ -335,17 +342,19 @@ export default function ConnectorsView() {
                 )}
 
                 <div className="flex gap-2 pt-1">
-                  <Button
-                    type="submit"
-                    className="h-8 rounded-none px-4 text-xs"
-                    disabled={createMutation.isPending}
-                  >
-                    {createMutation.isPending ? "Creating…" : "Create Connector"}
-                  </Button>
+                  <Magnetic strength={0.25}>
+                    <Button
+                      type="submit"
+                      className="h-10 rounded-full px-5 text-sm"
+                      disabled={createMutation.isPending}
+                    >
+                      {createMutation.isPending ? "Creating…" : "Create Connector"}
+                    </Button>
+                  </Magnetic>
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-8 rounded-none px-4 text-xs"
+                    className="h-10 rounded-full px-5 text-sm"
                     onClick={() => {
                       setShowForm(false);
                       setGithubForm(EMPTY_GITHUB_FORM);

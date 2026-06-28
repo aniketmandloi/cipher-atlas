@@ -51,7 +51,7 @@ export default function TodosPage() {
   return (
     <div className="mx-auto max-w-5xl px-6 py-16">
       <ScrollReveal>
-        <div className="border-b border-border pb-10">
+        <div className="pb-10">
           <p className="text-sm text-muted-foreground">Tasks</p>
           <h1 className="mt-2 font-display text-4xl font-medium tracking-tight">Todos</h1>
         </div>

@@ -12,11 +12,11 @@ import {
   TextReveal,
   TextShimmer,
   TiltCard,
+  ThemeToggle,
 } from "@cipher-atlas/ui/components/motion";
 import { cn } from "@cipher-atlas/ui/lib/utils";
 
 import { authClient } from "@/lib/auth-client";
-import { ModeToggle } from "@/components/mode-toggle";
 import UserMenu from "@/components/user-menu";
 import {
   brand,
@@ -76,7 +76,11 @@ export default function Home() {
             )}
           </nav>
           <div className="flex items-center gap-3">
-            <ModeToggle />
+            <ThemeToggle
+              variant="circle"
+              className="h-8 w-8 rounded-full text-muted-foreground transition-colors hover:text-foreground"
+              iconClassName="h-4 w-4"
+            />
             {session ? (
               <UserMenu />
             ) : (
