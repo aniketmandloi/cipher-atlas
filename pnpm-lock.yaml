@@ -220,6 +220,9 @@ importers:
       '@cipher-atlas/env':
         specifier: workspace:*
         version: link:../../packages/env
+      '@cipher-atlas/scan-domain':
+        specifier: workspace:*
+        version: link:../../packages/scan-domain
       '@fastify/cors':
         specifier: ^11.0.1
         version: 11.2.0

@@ -17,6 +17,7 @@
     "@cipher-atlas/auth": "workspace:*",
     "@cipher-atlas/db": "workspace:*",
     "@cipher-atlas/env": "workspace:*",
+    "@cipher-atlas/scan-domain": "workspace:*",
     "@fastify/cors": "^11.0.1",
     "@hono/trpc-server": "^0.4.0",
     "@trpc/server": "catalog:",

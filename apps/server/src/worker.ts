@@ -1,5 +1,9 @@
 import { db } from "@cipher-atlas/db";
-import { scanAttempt, scanJob } from "@cipher-atlas/db/schema/scan";
+import { coverageSlice, scanAttempt, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
+import {
+  deriveScanTerminalStatus,
+  type CoverageSliceRecord,
+} from "@cipher-atlas/scan-domain";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -7,6 +11,7 @@ import { pathToFileURL } from "node:url";
 export interface ProcessNextScanJobOptions {
   workerId?: string;
   failWithMessage?: string;
+  failConnectorIds?: string[];
   now?: Date;
   maxClaimAttempts?: number;
 }
@@ -38,30 +43,53 @@ export async function processNextScanJob(
     return null;
   }
 
-  try {
-    if (options.failWithMessage) {
-      throw new Error(options.failWithMessage);
-    }
+  const connectorRows = await db
+    .select()
+    .from(scanJobConnector)
+    .where(eq(scanJobConnector.scanJobId, claim.scanJobId));
 
-    const finishedAt = new Date();
-    await completeScanJob(claim, finishedAt);
+  const finishedAt = new Date();
+  const failConnectorIds = new Set(options.failConnectorIds ?? []);
+  const jobFailMessage = options.failWithMessage
+    ? sanitizeScanFailureMessage(new Error(options.failWithMessage))
+    : undefined;
+
+  const slices: CoverageSliceRecord[] = connectorRows.map((row) => {
+    const shouldFail = jobFailMessage !== undefined || failConnectorIds.has(row.connectorId);
+    const rawDetail = shouldFail
+      ? (jobFailMessage ?? `Connector ${row.displayName} failed during scan.`)
+      : null;
+    const detailMessage = rawDetail ? sanitizeScanFailureMessage(rawDetail) : null;
 
     return {
+      id: randomUUID(),
       scanJobId: claim.scanJobId,
-      attemptId: claim.attemptId,
-      status: "completed",
+      tenantId: claim.tenantId,
+      connectorId: row.connectorId,
+      connectorDisplayName: row.displayName,
+      sourceType: row.sourceType,
+      segmentLabel: null,
+      coverageStatus: shouldFail ? "failed" : "completed",
+      detailMessage,
+      startedAt: finishedAt,
+      completedAt: shouldFail ? null : finishedAt,
+      failedAt: shouldFail ? finishedAt : null,
+      createdAt: finishedAt,
+      updatedAt: finishedAt,
     };
-  } catch (error) {
-    const finishedAt = new Date();
-    const failureMessage = sanitizeScanFailureMessage(error);
-    await failScanJob(claim, finishedAt, failureMessage);
+  });
 
-    return {
-      scanJobId: claim.scanJobId,
-      attemptId: claim.attemptId,
-      status: "failed",
-    };
+  const terminalStatus = deriveScanTerminalStatus(slices);
+
+  if (terminalStatus === "completed") {
+    await finalizeScanJobWithCoverage(claim, finishedAt, slices, "completed");
+    return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "completed" };
   }
+
+  const failureMessage =
+    jobFailMessage ?? "Scan failed. One or more connectors could not be scanned.";
+  await finalizeScanJobWithCoverage(claim, finishedAt, slices, "failed", failureMessage);
+  return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "failed" };
 }
 
 async function claimNextScanJob({
@@ -137,13 +165,21 @@ async function claimNextScanJob({
   return null;
 }
 
-async function completeScanJob(claim: ClaimedScanJob, finishedAt: Date) {
+async function finalizeScanJobWithCoverage(
+  claim: ClaimedScanJob,
+  finishedAt: Date,
+  slices: CoverageSliceRecord[],
+  terminalStatus: "completed" | "failed",
+  failureMessage?: string,
+) {
   await db.transaction(async (tx) => {
     await tx
       .update(scanAttempt)
       .set({
-        status: "completed",
-        completedAt: finishedAt,
+        status: terminalStatus,
+        completedAt: terminalStatus === "completed" ? finishedAt : null,
+        failedAt: terminalStatus === "failed" ? finishedAt : null,
+        failureMessage: failureMessage ?? null,
         heartbeatAt: finishedAt,
         updatedAt: finishedAt,
       })
@@ -158,44 +194,34 @@ async function completeScanJob(claim: ClaimedScanJob, finishedAt: Date) {
     await tx
       .update(scanJob)
       .set({
-        status: "completed",
-        completedAt: finishedAt,
-        failedAt: null,
-        failureMessage: null,
+        status: terminalStatus,
+        completedAt: terminalStatus === "completed" ? finishedAt : null,
+        failedAt: terminalStatus === "failed" ? finishedAt : null,
+        failureMessage: failureMessage ?? null,
         updatedAt: finishedAt,
       })
       .where(and(eq(scanJob.id, claim.scanJobId), eq(scanJob.tenantId, claim.tenantId)));
-  });
-}
 
-async function failScanJob(claim: ClaimedScanJob, finishedAt: Date, failureMessage: string) {
-  await db.transaction(async (tx) => {
-    await tx
-      .update(scanAttempt)
-      .set({
-        status: "failed",
-        failedAt: finishedAt,
-        failureMessage,
-        heartbeatAt: finishedAt,
-        updatedAt: finishedAt,
-      })
-      .where(
-        and(
-          eq(scanAttempt.id, claim.attemptId),
-          eq(scanAttempt.scanJobId, claim.scanJobId),
-          eq(scanAttempt.tenantId, claim.tenantId),
-        ),
+    if (slices.length > 0) {
+      await tx.insert(coverageSlice).values(
+        slices.map((s) => ({
+          id: s.id,
+          scanJobId: s.scanJobId,
+          tenantId: s.tenantId,
+          connectorId: s.connectorId,
+          connectorDisplayName: s.connectorDisplayName,
+          sourceType: s.sourceType,
+          segmentLabel: s.segmentLabel,
+          coverageStatus: s.coverageStatus,
+          detailMessage: s.detailMessage,
+          startedAt: s.startedAt,
+          completedAt: s.completedAt,
+          failedAt: s.failedAt,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+        })),
       );
-
-    await tx
-      .update(scanJob)
-      .set({
-        status: "failed",
-        failedAt: finishedAt,
-        failureMessage,
-        updatedAt: finishedAt,
-      })
-      .where(and(eq(scanJob.id, claim.scanJobId), eq(scanJob.tenantId, claim.tenantId)));
+    }
   });
 }
 
