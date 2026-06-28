@@ -102,64 +102,55 @@ async function claimNextScanJob({
   maxAttempts: number;
 }): Promise<ClaimedScanJob | null> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const claimed = await db.transaction(async (tx) => {
-      const [nextJob] = await tx
-        .select()
-        .from(scanJob)
-        .where(eq(scanJob.status, "queued"))
-        .orderBy(asc(scanJob.queuedAt))
-        .limit(1)
-        .for("update", { skipLocked: true });
+    const [nextJob] = await db
+      .select()
+      .from(scanJob)
+      .where(eq(scanJob.status, "queued"))
+      .orderBy(asc(scanJob.queuedAt))
+      .limit(1);
 
-      if (!nextJob) {
-        return null;
-      }
+    if (!nextJob) {
+      return null;
+    }
 
-      const [claimedJob] = await tx
-        .update(scanJob)
-        .set({
-          status: "running",
-          startedAt: claimedAt,
-          updatedAt: claimedAt,
-        })
-        .where(and(eq(scanJob.id, nextJob.id), eq(scanJob.status, "queued")))
-        .returning();
+    // Optimistic claim: only succeeds if the job is still queued
+    const [claimedJob] = await db
+      .update(scanJob)
+      .set({ status: "running", startedAt: claimedAt, updatedAt: claimedAt })
+      .where(and(eq(scanJob.id, nextJob.id), eq(scanJob.status, "queued")))
+      .returning();
 
-      if (!claimedJob) {
-        return null;
-      }
+    if (!claimedJob) {
+      // Another worker claimed it — retry
+      continue;
+    }
 
-      const [latestAttempt] = await tx
-        .select()
-        .from(scanAttempt)
-        .where(eq(scanAttempt.scanJobId, claimedJob.id))
-        .orderBy(desc(scanAttempt.attemptNumber))
-        .limit(1);
-      const attemptNumber = latestAttempt ? latestAttempt.attemptNumber + 1 : 1;
-      const attemptId = randomUUID();
+    const [latestAttempt] = await db
+      .select()
+      .from(scanAttempt)
+      .where(eq(scanAttempt.scanJobId, claimedJob.id))
+      .orderBy(desc(scanAttempt.attemptNumber))
+      .limit(1);
+    const attemptNumber = latestAttempt ? latestAttempt.attemptNumber + 1 : 1;
+    const attemptId = randomUUID();
 
-      await tx.insert(scanAttempt).values({
-        id: attemptId,
-        scanJobId: claimedJob.id,
-        tenantId: claimedJob.tenantId,
-        attemptNumber,
-        status: "running",
-        workerId,
-        claimedAt,
-        startedAt: claimedAt,
-        heartbeatAt: claimedAt,
-      });
-
-      return {
-        scanJobId: claimedJob.id,
-        tenantId: claimedJob.tenantId,
-        attemptId,
-      } satisfies ClaimedScanJob;
+    await db.insert(scanAttempt).values({
+      id: attemptId,
+      scanJobId: claimedJob.id,
+      tenantId: claimedJob.tenantId,
+      attemptNumber,
+      status: "running",
+      workerId,
+      claimedAt,
+      startedAt: claimedAt,
+      heartbeatAt: claimedAt,
     });
 
-    if (claimed) {
-      return claimed;
-    }
+    return {
+      scanJobId: claimedJob.id,
+      tenantId: claimedJob.tenantId,
+      attemptId,
+    } satisfies ClaimedScanJob;
   }
 
   return null;
@@ -172,57 +163,56 @@ async function finalizeScanJobWithCoverage(
   terminalStatus: "completed" | "failed",
   failureMessage?: string,
 ) {
-  await db.transaction(async (tx) => {
-    await tx
-      .update(scanAttempt)
-      .set({
-        status: terminalStatus,
-        completedAt: terminalStatus === "completed" ? finishedAt : null,
-        failedAt: terminalStatus === "failed" ? finishedAt : null,
-        failureMessage: failureMessage ?? null,
-        heartbeatAt: finishedAt,
-        updatedAt: finishedAt,
-      })
-      .where(
-        and(
-          eq(scanAttempt.id, claim.attemptId),
-          eq(scanAttempt.scanJobId, claim.scanJobId),
-          eq(scanAttempt.tenantId, claim.tenantId),
-        ),
-      );
+  // neon-http does not support interactive transactions; sequential writes are the launch posture.
+  await db
+    .update(scanAttempt)
+    .set({
+      status: terminalStatus,
+      completedAt: terminalStatus === "completed" ? finishedAt : null,
+      failedAt: terminalStatus === "failed" ? finishedAt : null,
+      failureMessage: failureMessage ?? null,
+      heartbeatAt: finishedAt,
+      updatedAt: finishedAt,
+    })
+    .where(
+      and(
+        eq(scanAttempt.id, claim.attemptId),
+        eq(scanAttempt.scanJobId, claim.scanJobId),
+        eq(scanAttempt.tenantId, claim.tenantId),
+      ),
+    );
 
-    await tx
-      .update(scanJob)
-      .set({
-        status: terminalStatus,
-        completedAt: terminalStatus === "completed" ? finishedAt : null,
-        failedAt: terminalStatus === "failed" ? finishedAt : null,
-        failureMessage: failureMessage ?? null,
-        updatedAt: finishedAt,
-      })
-      .where(and(eq(scanJob.id, claim.scanJobId), eq(scanJob.tenantId, claim.tenantId)));
+  await db
+    .update(scanJob)
+    .set({
+      status: terminalStatus,
+      completedAt: terminalStatus === "completed" ? finishedAt : null,
+      failedAt: terminalStatus === "failed" ? finishedAt : null,
+      failureMessage: failureMessage ?? null,
+      updatedAt: finishedAt,
+    })
+    .where(and(eq(scanJob.id, claim.scanJobId), eq(scanJob.tenantId, claim.tenantId)));
 
-    if (slices.length > 0) {
-      await tx.insert(coverageSlice).values(
-        slices.map((s) => ({
-          id: s.id,
-          scanJobId: s.scanJobId,
-          tenantId: s.tenantId,
-          connectorId: s.connectorId,
-          connectorDisplayName: s.connectorDisplayName,
-          sourceType: s.sourceType,
-          segmentLabel: s.segmentLabel,
-          coverageStatus: s.coverageStatus,
-          detailMessage: s.detailMessage,
-          startedAt: s.startedAt,
-          completedAt: s.completedAt,
-          failedAt: s.failedAt,
-          createdAt: s.createdAt,
-          updatedAt: s.updatedAt,
-        })),
-      );
-    }
-  });
+  if (slices.length > 0) {
+    await db.insert(coverageSlice).values(
+      slices.map((s) => ({
+        id: s.id,
+        scanJobId: s.scanJobId,
+        tenantId: s.tenantId,
+        connectorId: s.connectorId,
+        connectorDisplayName: s.connectorDisplayName,
+        sourceType: s.sourceType,
+        segmentLabel: s.segmentLabel,
+        coverageStatus: s.coverageStatus,
+        detailMessage: s.detailMessage,
+        startedAt: s.startedAt,
+        completedAt: s.completedAt,
+        failedAt: s.failedAt,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      })),
+    );
+  }
 }
 
 export function sanitizeScanFailureMessage(error: unknown): string {
