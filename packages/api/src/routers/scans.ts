@@ -105,39 +105,37 @@ export const scansRouter = router({
     const jobId = randomUUID();
     const now = new Date();
 
-    const created = await db.transaction(async (tx) => {
-      const [createdJob] = await tx
-        .insert(scanJob)
-        .values({
-          id: jobId,
-          tenantId,
-          createdByUserId: ctx.session.user.id,
-          status: "queued",
-          queuedAt: now,
-        })
-        .returning();
+    const [createdJob] = await db
+      .insert(scanJob)
+      .values({
+        id: jobId,
+        tenantId,
+        createdByUserId: ctx.session.user.id,
+        status: "queued",
+        queuedAt: now,
+      })
+      .returning();
 
-      if (!createdJob) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Scan could not be created",
-        });
-      }
+    if (!createdJob) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Scan could not be created",
+      });
+    }
 
-      await tx.insert(scanJobConnector).values(
-        connectorRows.map((row) => ({
-          scanJobId: jobId,
-          connectorId: row.id,
-          tenantId,
-          sourceType: row.sourceType,
-          displayName: row.displayName,
-          statusAtLaunch: row.status,
-          selectedAt: now,
-        })),
-      );
+    await db.insert(scanJobConnector).values(
+      connectorRows.map((row) => ({
+        scanJobId: jobId,
+        connectorId: row.id,
+        tenantId,
+        sourceType: row.sourceType,
+        displayName: row.displayName,
+        statusAtLaunch: row.status,
+        selectedAt: now,
+      })),
+    );
 
-      return createdJob;
-    });
+    const created = createdJob;
 
     const [scan] = await hydrateScanJobs([created]);
 
