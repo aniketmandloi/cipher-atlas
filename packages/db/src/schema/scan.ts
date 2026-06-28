@@ -110,6 +110,9 @@ export const coverageSlice = pgTable(
     scanJobId: text("scan_job_id")
       .notNull()
       .references(() => scanJob.id, { onDelete: "cascade" }),
+    scanAttemptId: text("scan_attempt_id")
+      .notNull()
+      .references(() => scanAttempt.id, { onDelete: "cascade" }),
     tenantId: text("tenant_id").notNull(),
     connectorId: text("connector_id").references(() => connector.id, { onDelete: "set null" }),
     connectorDisplayName: text("connector_display_name").notNull(),
@@ -128,6 +131,7 @@ export const coverageSlice = pgTable(
   },
   (table) => [
     index("coverage_slice_scan_job_id_idx").on(table.scanJobId),
+    index("coverage_slice_scan_attempt_id_idx").on(table.scanAttemptId),
     index("coverage_slice_tenant_id_idx").on(table.tenantId),
     index("coverage_slice_scan_job_coverage_status_idx").on(table.scanJobId, table.coverageStatus),
   ],
@@ -165,6 +169,10 @@ export const coverageSliceRelations = relations(coverageSlice, ({ one }) => ({
   scanJob: one(scanJob, {
     fields: [coverageSlice.scanJobId],
     references: [scanJob.id],
+  }),
+  scanAttempt: one(scanAttempt, {
+    fields: [coverageSlice.scanAttemptId],
+    references: [scanAttempt.id],
   }),
   connector: one(connector, {
     fields: [coverageSlice.connectorId],

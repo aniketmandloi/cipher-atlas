@@ -66,6 +66,9 @@ function sliceActionableMessage(
   detailMessage: string | null,
 ): string | null {
   if (status === "completed") return null;
+  if (status === "failed" && detailMessage) {
+    return `${detailMessage} Re-check the connector's read scope and revalidate before retrying.`;
+  }
   if (detailMessage) return detailMessage;
   switch (status) {
     case "failed":

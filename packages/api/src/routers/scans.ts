@@ -1,6 +1,6 @@
 import { db } from "@cipher-atlas/db";
 import { connector } from "@cipher-atlas/db/schema/connector";
-import { coverageSlice, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
+import { coverageSlice, scanAttempt, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
 import {
   connectorScanEligibility,
   createScanInputSchema,
@@ -42,7 +42,7 @@ export const scansRouter = router({
         .limit(input?.limit ?? 50)
         .offset(input?.offset ?? 0);
 
-      return hydrateScanJobs(rows);
+      return hydrateScanJobs(rows, { includeCoverageSlices: false });
     }),
 
   get: protectedProcedure.input(getScanInputSchema).query(async ({ ctx, input }) => {
@@ -60,7 +60,7 @@ export const scansRouter = router({
       });
     }
 
-    const [scan] = await hydrateScanJobs([row]);
+    const [scan] = await hydrateScanJobs([row], { includeCoverageSlices: true });
 
     if (!scan) {
       throw new TRPCError({
@@ -105,39 +105,41 @@ export const scansRouter = router({
     const jobId = randomUUID();
     const now = new Date();
 
-    const [createdJob] = await db
-      .insert(scanJob)
-      .values({
-        id: jobId,
-        tenantId,
-        createdByUserId: ctx.session.user.id,
-        status: "queued",
-        queuedAt: now,
-      })
-      .returning();
+    const created = await db.transaction(async (tx) => {
+      const [createdJob] = await tx
+        .insert(scanJob)
+        .values({
+          id: jobId,
+          tenantId,
+          createdByUserId: ctx.session.user.id,
+          status: "queued",
+          queuedAt: now,
+        })
+        .returning();
 
-    if (!createdJob) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Scan could not be created",
-      });
-    }
+      if (!createdJob) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Scan could not be created",
+        });
+      }
 
-    await db.insert(scanJobConnector).values(
-      connectorRows.map((row) => ({
-        scanJobId: jobId,
-        connectorId: row.id,
-        tenantId,
-        sourceType: row.sourceType,
-        displayName: row.displayName,
-        statusAtLaunch: row.status,
-        selectedAt: now,
-      })),
-    );
+      await tx.insert(scanJobConnector).values(
+        connectorRows.map((row) => ({
+          scanJobId: jobId,
+          connectorId: row.id,
+          tenantId,
+          sourceType: row.sourceType,
+          displayName: row.displayName,
+          statusAtLaunch: row.status,
+          selectedAt: now,
+        })),
+      );
 
-    const created = createdJob;
+      return createdJob;
+    });
 
-    const [scan] = await hydrateScanJobs([created]);
+    const [scan] = await hydrateScanJobs([created], { includeCoverageSlices: true });
 
     if (!scan) {
       throw new TRPCError({
@@ -152,6 +154,7 @@ export const scansRouter = router({
 
 type ScanJobRow = typeof scanJob.$inferSelect;
 type ScanConnectorRow = typeof scanJobConnector.$inferSelect;
+type ScanAttemptRow = typeof scanAttempt.$inferSelect;
 type CoverageSliceRow = typeof coverageSlice.$inferSelect;
 
 export interface HydratedScanJob {
@@ -167,19 +170,23 @@ export interface HydratedScanJob {
   createdAt: Date;
   updatedAt: Date;
   connectors: ScanConnectorScopeRecord[];
-  coverageSlices: RedactedCoverageSlice[];
+  coverageSlices?: RedactedCoverageSlice[];
   coverageSummary: CoverageSummary;
 }
 
-async function hydrateScanJobs(rows: ScanJobRow[]): Promise<HydratedScanJob[]> {
+async function hydrateScanJobs(
+  rows: ScanJobRow[],
+  options: { includeCoverageSlices: boolean },
+): Promise<HydratedScanJob[]> {
   if (rows.length === 0) {
     return [];
   }
 
   const scanIds = rows.map((row) => row.id);
 
-  const [scopeRows, sliceRows] = await Promise.all([
+  const [scopeRows, attemptRows, sliceRows] = await Promise.all([
     db.select().from(scanJobConnector).where(inArray(scanJobConnector.scanJobId, scanIds)),
+    db.select().from(scanAttempt).where(inArray(scanAttempt.scanJobId, scanIds)),
     db
       .select()
       .from(coverageSlice)
@@ -188,6 +195,7 @@ async function hydrateScanJobs(rows: ScanJobRow[]): Promise<HydratedScanJob[]> {
   ]);
 
   const scopesByScanId = groupConnectorScopes(scopeRows);
+  const latestAttemptIdByScanId = groupLatestAttemptIds(attemptRows);
   const slicesByScanId = groupCoverageSlices(sliceRows);
 
   return rows.map((row) => {
@@ -206,13 +214,16 @@ async function hydrateScanJobs(rows: ScanJobRow[]): Promise<HydratedScanJob[]> {
       connectors: scopesByScanId.get(row.id) ?? [],
     } satisfies ScanJobRecord);
 
-    const rawSlices = slicesByScanId.get(row.id) ?? [];
+    const latestAttemptId = latestAttemptIdByScanId.get(row.id);
+    const rawSlices = (slicesByScanId.get(row.id) ?? []).filter(
+      (slice) => !latestAttemptId || slice.scanAttemptId === latestAttemptId,
+    );
     const redactedSlices = rawSlices.map(redactCoverageSlice);
     const summary = summarizeCoverage(rawSlices);
 
     return {
       ...redacted,
-      coverageSlices: redactedSlices,
+      ...(options.includeCoverageSlices ? { coverageSlices: redactedSlices } : {}),
       coverageSummary: summary,
     };
   });
@@ -237,6 +248,19 @@ function groupConnectorScopes(rows: ScanConnectorRow[]): Map<string, ScanConnect
   return scopesByScanId;
 }
 
+function groupLatestAttemptIds(rows: ScanAttemptRow[]): Map<string, string> {
+  const latestByScanId = new Map<string, ScanAttemptRow>();
+
+  for (const row of rows) {
+    const current = latestByScanId.get(row.scanJobId);
+    if (!current || row.attemptNumber > current.attemptNumber) {
+      latestByScanId.set(row.scanJobId, row);
+    }
+  }
+
+  return new Map([...latestByScanId].map(([scanJobId, attempt]) => [scanJobId, attempt.id]));
+}
+
 function groupCoverageSlices(rows: CoverageSliceRow[]): Map<string, CoverageSliceRecord[]> {
   const slicesByScanId = new Map<string, CoverageSliceRecord[]>();
 
@@ -245,6 +269,7 @@ function groupCoverageSlices(rows: CoverageSliceRow[]): Map<string, CoverageSlic
     slices.push({
       id: row.id,
       scanJobId: row.scanJobId,
+      scanAttemptId: row.scanAttemptId,
       tenantId: row.tenantId,
       connectorId: row.connectorId,
       connectorDisplayName: row.connectorDisplayName,

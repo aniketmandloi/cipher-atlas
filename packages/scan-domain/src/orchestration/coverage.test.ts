@@ -18,6 +18,7 @@ function makeSlice(
   return {
     id,
     scanJobId: "job-1",
+    scanAttemptId: "attempt-1",
     tenantId: "tenant-1",
     connectorId: `connector-${id}`,
     connectorDisplayName: `Connector ${id}`,
@@ -129,6 +130,7 @@ describe("redactCoverageSlice", () => {
     expect(redacted).toEqual({
       id: "x",
       scanJobId: "job-1",
+      scanAttemptId: "attempt-1",
       tenantId: "tenant-1",
       connectorId: null,
       connectorDisplayName: "Connector x",

@@ -68,7 +68,7 @@ export function coverageLabel(overall: CoverageOverall): string {
     case "partial":
       return "Partial coverage";
     case "failed":
-      return "No coverage";
+      return "Coverage failed";
     case "empty":
       return "No data";
   }
@@ -82,7 +82,9 @@ export function connectorBlockedMessage(
     case "pending_validation":
       return "Pending validation — validate this connector before launching a scan.";
     case "invalid":
-      return lastValidationMessage ?? "Invalid — revalidate or recreate before launching a scan.";
+      return lastValidationMessage
+        ? `Invalid — ${lastValidationMessage}`
+        : "Invalid — revalidate or recreate before launching a scan.";
     case "unsupported":
       return "Unsupported source type for scanning.";
     default:

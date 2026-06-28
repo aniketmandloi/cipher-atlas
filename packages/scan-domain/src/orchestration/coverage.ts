@@ -15,6 +15,7 @@ export type CoverageStatus = (typeof coverageStatuses)[number];
 export interface CoverageSliceRecord {
   id: string;
   scanJobId: string;
+  scanAttemptId: string;
   tenantId: string;
   connectorId: string | null;
   connectorDisplayName: string;
@@ -32,6 +33,7 @@ export interface CoverageSliceRecord {
 export interface RedactedCoverageSlice {
   id: string;
   scanJobId: string;
+  scanAttemptId: string;
   tenantId: string;
   connectorId: string | null;
   connectorDisplayName: string;
@@ -54,6 +56,7 @@ export function redactCoverageSlice(slice: CoverageSliceRecord): RedactedCoverag
   return {
     id: slice.id,
     scanJobId: slice.scanJobId,
+    scanAttemptId: slice.scanAttemptId,
     tenantId: slice.tenantId,
     connectorId: slice.connectorId,
     connectorDisplayName: slice.connectorDisplayName,
