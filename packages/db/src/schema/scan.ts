@@ -1,0 +1,123 @@
+import { relations } from "drizzle-orm";
+import {
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+
+import { user } from "./auth";
+import { connector, connectorSourceType, connectorStatus } from "./connector";
+
+export const scanStatus = pgEnum("scan_status", ["queued", "running", "completed", "failed"]);
+
+export const scanJob = pgTable(
+  "scan_job",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: scanStatus("status").default("queued").notNull(),
+    failureMessage: text("failure_message"),
+    queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("scan_job_tenant_id_idx").on(table.tenantId),
+    index("scan_job_tenant_status_idx").on(table.tenantId, table.status),
+    index("scan_job_created_by_user_id_idx").on(table.createdByUserId),
+    index("scan_job_queued_idx").on(table.status, table.queuedAt),
+  ],
+);
+
+export const scanJobConnector = pgTable(
+  "scan_job_connector",
+  {
+    scanJobId: text("scan_job_id")
+      .notNull()
+      .references(() => scanJob.id, { onDelete: "cascade" }),
+    connectorId: text("connector_id")
+      .notNull()
+      .references(() => connector.id, { onDelete: "restrict" }),
+    tenantId: text("tenant_id").notNull(),
+    sourceType: connectorSourceType("source_type").notNull(),
+    displayName: text("display_name").notNull(),
+    statusAtLaunch: connectorStatus("status_at_launch").notNull(),
+    selectedAt: timestamp("selected_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.scanJobId, table.connectorId] }),
+    index("scan_job_connector_tenant_id_idx").on(table.tenantId),
+    index("scan_job_connector_connector_id_idx").on(table.connectorId),
+  ],
+);
+
+export const scanAttempt = pgTable(
+  "scan_attempt",
+  {
+    id: text("id").primaryKey(),
+    scanJobId: text("scan_job_id")
+      .notNull()
+      .references(() => scanJob.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    status: scanStatus("status").notNull(),
+    workerId: text("worker_id"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    failureMessage: text("failure_message"),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("scan_attempt_scan_job_attempt_number_idx").on(table.scanJobId, table.attemptNumber),
+    index("scan_attempt_tenant_id_idx").on(table.tenantId),
+    index("scan_attempt_scan_job_id_idx").on(table.scanJobId),
+  ],
+);
+
+export const scanJobRelations = relations(scanJob, ({ one, many }) => ({
+  createdBy: one(user, {
+    fields: [scanJob.createdByUserId],
+    references: [user.id],
+  }),
+  connectors: many(scanJobConnector),
+  attempts: many(scanAttempt),
+}));
+
+export const scanJobConnectorRelations = relations(scanJobConnector, ({ one }) => ({
+  scanJob: one(scanJob, {
+    fields: [scanJobConnector.scanJobId],
+    references: [scanJob.id],
+  }),
+  connector: one(connector, {
+    fields: [scanJobConnector.connectorId],
+    references: [connector.id],
+  }),
+}));
+
+export const scanAttemptRelations = relations(scanAttempt, ({ one }) => ({
+  scanJob: one(scanJob, {
+    fields: [scanAttempt.scanJobId],
+    references: [scanJob.id],
+  }),
+}));
