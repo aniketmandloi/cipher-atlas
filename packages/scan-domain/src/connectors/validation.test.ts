@@ -7,7 +7,7 @@ describe("connector validation", () => {
     vi.restoreAllMocks();
   });
 
-  it("normalizes successful GitHub validation to usable", async () => {
+  it("keeps authenticated GitHub credentials pending until scan scope is configured", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
 
     await expect(
@@ -17,8 +17,29 @@ describe("connector validation", () => {
       }),
     ).resolves.toEqual({
       status: "valid",
-      connectorStatus: "usable",
-      message: "GitHub token is valid for read-only API access.",
+      connectorStatus: "pending_validation",
+      message:
+        "GitHub token authenticated. Configure scan scope before using this connector for scans.",
+    });
+  });
+
+  it("keeps authenticated AWS credentials pending until scan scope is configured", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+
+    await expect(
+      validateConnectorCredentials({
+        sourceType: "aws",
+        credentials: {
+          accessKeyId: "AKIAEXAMPLE123456",
+          secretAccessKey: "exampleSecretAccessKey123",
+          region: "us-east-1",
+        },
+      }),
+    ).resolves.toEqual({
+      status: "valid",
+      connectorStatus: "pending_validation",
+      message:
+        "AWS credentials authenticated with STS. Configure scan scope before using this connector for scans.",
     });
   });
 

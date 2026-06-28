@@ -90,13 +90,6 @@ export default function ConnectorsView() {
 
   const createMutation = useMutation(
     trpc.connectors.create.mutationOptions({
-      onSuccess: () => {
-        void connectorsQuery.refetch();
-        setGithubForm(EMPTY_GITHUB_FORM);
-        setAwsForm(EMPTY_AWS_FORM);
-        setShowForm(false);
-        toast.success("Connector created. Run validation before using it for scans.");
-      },
       onError: (err) => {
         toast.error(err.message);
       },
@@ -107,7 +100,7 @@ export default function ConnectorsView() {
     trpc.connectors.validate.mutationOptions({
       onSuccess: (data) => {
         void connectorsQuery.refetch();
-        if (data.status === "usable") {
+        if (data.lastValidationStatus === "valid") {
           toast.success("Connector validated successfully.");
         } else {
           toast.error(data.lastValidationMessage ?? "Validation failed.");
@@ -121,12 +114,25 @@ export default function ConnectorsView() {
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    const options = {
+      onSuccess: () => {
+        void connectorsQuery.refetch();
+        setGithubForm(EMPTY_GITHUB_FORM);
+        setAwsForm(EMPTY_AWS_FORM);
+        setShowForm(false);
+        toast.success("Connector created. Run validation before using it for scans.");
+      },
+      onSettled: () => {
+        createMutation.reset();
+      },
+    };
+
     if (sourceType === "github") {
       createMutation.mutate({
         sourceType: "github",
         displayName: githubForm.displayName,
         credentials: { token: githubForm.token },
-      });
+      }, options);
     } else {
       createMutation.mutate({
         sourceType: "aws",
@@ -137,7 +143,7 @@ export default function ConnectorsView() {
           sessionToken: awsForm.sessionToken || undefined,
           region: awsForm.region,
         },
-      });
+      }, options);
     }
   }
 

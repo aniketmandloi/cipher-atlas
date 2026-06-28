@@ -108,7 +108,30 @@ export const connectorsRouter = router({
       });
     }
 
-    const credentials = decryptStoredCredentials(row);
+    const credentials = tryDecryptStoredCredentials(row);
+    if (!credentials) {
+      const [updated] = await db
+        .update(connector)
+        .set({
+          status: "invalid",
+          lastValidationStatus: "invalid",
+          lastValidationMessage:
+            "Stored connector credentials could not be decrypted. Recreate the connector with fresh credentials.",
+          lastValidatedAt: new Date(),
+        })
+        .where(and(eq(connector.id, row.id), eq(connector.tenantId, tenantScope(ctx.session.user.id))))
+        .returning();
+
+      if (!updated) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Connector validation result could not be saved",
+        });
+      }
+
+      return redactConnector(updated);
+    }
+
     const result = await validateConnectorCredentials({
       sourceType: row.sourceType,
       credentials,
@@ -156,16 +179,20 @@ function normalizeCredentialInput(input: z.infer<typeof createConnectorInput>): 
   });
 }
 
-function decryptStoredCredentials(row: ConnectorRecord): GitHubCredentials | AwsCredentials {
-  if (row.sourceType === "github") {
-    return decryptConnectorCredentials<GitHubCredentials>(
+function tryDecryptStoredCredentials(row: ConnectorRecord): GitHubCredentials | AwsCredentials | undefined {
+  try {
+    if (row.sourceType === "github") {
+      return decryptConnectorCredentials<GitHubCredentials>(
+        row.credentialCiphertext,
+        env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY,
+      );
+    }
+
+    return decryptConnectorCredentials<AwsCredentials>(
       row.credentialCiphertext,
       env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY,
     );
+  } catch {
+    return undefined;
   }
-
-  return decryptConnectorCredentials<AwsCredentials>(
-    row.credentialCiphertext,
-    env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY,
-  );
 }
