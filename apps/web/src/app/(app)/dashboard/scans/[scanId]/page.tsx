@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
 
 import { authClient } from "@/lib/auth-client";
 
@@ -26,8 +28,19 @@ export default async function ScanDetailPage({ params }: Props) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-16">
       <div className="pb-10">
-        <p className="text-sm text-muted-foreground">Scans</p>
-        <h1 className="mt-2 font-display text-4xl font-medium tracking-tight">Scan Detail</h1>
+        {/* Breadcrumb + back button */}
+        <div className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground">
+          <Link
+            href="/dashboard/scans"
+            className="flex items-center gap-1 hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className="size-3.5" />
+            Scans
+          </Link>
+          <span>/</span>
+          <span className="text-foreground">Scan Detail</span>
+        </div>
+        <h1 className="font-display text-4xl font-medium tracking-tight">Scan Detail</h1>
       </div>
       <ScanDetailView scanId={scanId} />
     </div>

@@ -1,10 +1,5 @@
 "use client";
 
-import type Link from "next/link";
-import NextLink from "next/link";
-
-type Href = Parameters<typeof Link>[0]["href"];
-
 import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
 import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
@@ -99,12 +94,12 @@ export default function ScanDetailView({ scanId }: Props) {
             ? "This scan could not be found."
             : "Failed to load scan."}
         </p>
-        <NextLink
+        <a
           href="/dashboard/scans"
           className="text-sm text-muted-foreground underline hover:text-foreground"
         >
           Back to scans
-        </NextLink>
+        </a>
       </div>
     );
   }
@@ -256,14 +251,6 @@ export default function ScanDetailView({ scanId }: Props) {
         </div>
       </ScrollReveal>
 
-      <ScrollReveal delay={0.12}>
-        <NextLink
-          href={"/dashboard/scans" as Href}
-          className="text-sm text-muted-foreground underline hover:text-foreground"
-        >
-          ← Back to Scan Jobs
-        </NextLink>
-      </ScrollReveal>
     </div>
   );
 }
