@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import type Link from "next/link";
+import NextLink from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Magnetic, ScrollProgress } from "@cipher-atlas/ui/components/motion";
@@ -9,12 +10,15 @@ import { cn } from "@cipher-atlas/ui/lib/utils";
 import { ModeToggle } from "./mode-toggle";
 import UserMenu from "./user-menu";
 
+type Href = Parameters<typeof Link>[0]["href"];
+
 const brand = { name: "Cipher Atlas", mark: "CA" } as const;
 
 const links = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/todos", label: "Todos" },
-] as const;
+  { to: "/dashboard" as Href, label: "Dashboard" },
+  { to: "/dashboard/connectors" as Href, label: "Connectors" },
+  { to: "/todos" as Href, label: "Todos" },
+];
 
 export default function Header() {
   const pathname = usePathname();
@@ -24,7 +28,7 @@ export default function Header() {
       <ScrollProgress fixed={false} className="absolute bottom-0 left-0 right-0 top-auto" />
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
         <Magnetic strength={0.15}>
-          <Link
+          <NextLink
             href="/"
             className="flex items-center gap-2 text-[15px] font-semibold tracking-tight"
           >
@@ -32,21 +36,21 @@ export default function Header() {
               {brand.mark}
             </span>
             {brand.name}
-          </Link>
+          </NextLink>
         </Magnetic>
 
         <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
           {links.map(({ to, label }) => (
-            <Magnetic key={to} strength={0.2}>
-              <Link
+            <Magnetic key={String(to)} strength={0.2}>
+              <NextLink
                 href={to}
                 className={cn(
                   "transition-colors hover:text-foreground",
-                  pathname === to && "text-foreground",
+                  pathname === String(to) && "text-foreground",
                 )}
               >
                 {label}
-              </Link>
+              </NextLink>
             </Magnetic>
           ))}
         </nav>
