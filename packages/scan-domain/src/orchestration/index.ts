@@ -1,3 +1,5 @@
+export * from "./coverage";
+
 import { z } from "zod";
 
 import { connectorStatusSchema, connectorSourceTypeSchema } from "../connectors/types";
@@ -144,9 +146,12 @@ export function connectorScanEligibility(
     };
   }
 
+  const detail = connector.lastValidationMessage
+    ? `: ${connector.lastValidationMessage}`
+    : ". Revalidate or recreate it before launching a scan.";
   return {
     eligible: false,
-    reason: `${connector.displayName} is invalid. Revalidate or recreate it before launching a scan.`,
+    reason: `${connector.displayName} is invalid${detail}`,
   };
 }
 
