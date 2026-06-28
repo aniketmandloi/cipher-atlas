@@ -3,8 +3,8 @@
 import { ArrowRight, Check } from "lucide-react";
 import Link from "next/link";
 
-import { buttonVariants } from "@cipher-atlas/ui/components/button";
 import {
+  buttonCn,
   Magnetic,
   NumberTicker,
   ScrollProgress,
@@ -12,11 +12,11 @@ import {
   TextReveal,
   TextShimmer,
   TiltCard,
+  ThemeToggle,
 } from "@cipher-atlas/ui/components/motion";
 import { cn } from "@cipher-atlas/ui/lib/utils";
 
 import { authClient } from "@/lib/auth-client";
-import { ModeToggle } from "@/components/mode-toggle";
 import UserMenu from "@/components/user-menu";
 import {
   brand,
@@ -76,7 +76,11 @@ export default function Home() {
             )}
           </nav>
           <div className="flex items-center gap-3">
-            <ModeToggle />
+            <ThemeToggle
+              variant="circle"
+              className="h-8 w-8 rounded-full text-muted-foreground transition-colors hover:text-foreground"
+              iconClassName="h-4 w-4"
+            />
             {session ? (
               <UserMenu />
             ) : (
@@ -88,7 +92,7 @@ export default function Home() {
                   {nav.signIn.label}
                 </Link>
                 <Magnetic strength={0.2}>
-                  <a href={nav.cta.href} className={cn(buttonVariants(), cta)}>
+                  <a href={nav.cta.href} className={cn(buttonCn(), cta)}>
                     {nav.cta.label}
                   </a>
                 </Magnetic>
@@ -122,7 +126,7 @@ export default function Home() {
               <Magnetic strength={0.3}>
                 <a
                   href={hero.primaryCta.href}
-                  className={cn(buttonVariants(), cta, "gap-2")}
+                  className={cn(buttonCn(), cta, "gap-2")}
                 >
                   {hero.primaryCta.label}
                   <ArrowRight className="size-4" />
@@ -130,7 +134,7 @@ export default function Home() {
               </Magnetic>
               <a
                 href={hero.secondaryCta.href}
-                className={cn(buttonVariants({ variant: "outline" }), ctaGhost)}
+                className={cn(buttonCn("outline"), ctaGhost)}
               >
                 {hero.secondaryCta.label}
               </a>
@@ -277,7 +281,7 @@ export default function Home() {
             <Magnetic strength={0.2} className="mt-7 w-full">
               <a
                 href={pricing.cta.href}
-                className={cn(buttonVariants(), cta, "w-full gap-2")}
+                className={cn(buttonCn(), cta, "w-full gap-2")}
               >
                 {pricing.cta.label}
                 <ArrowRight className="size-4" />
@@ -311,7 +315,7 @@ export default function Home() {
             <Magnetic strength={0.3} className="mt-8 inline-flex">
               <a
                 href={finalCta.cta.href}
-                className={cn(buttonVariants(), cta, "gap-2")}
+                className={cn(buttonCn(), cta, "gap-2")}
               >
                 {finalCta.cta.label}
                 <ArrowRight className="size-4" />

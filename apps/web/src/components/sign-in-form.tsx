@@ -1,4 +1,4 @@
-import { Button } from "@cipher-atlas/ui/components/button";
+import { Button } from "@cipher-atlas/ui/components/motion";
 import { Input } from "@cipher-atlas/ui/components/input";
 import { Label } from "@cipher-atlas/ui/components/label";
 import { Magnetic, ScrollReveal } from "@cipher-atlas/ui/components/motion";
@@ -124,7 +124,8 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
               <Magnetic strength={0.2} className="w-full">
                 <Button
                   type="submit"
-                  className="h-10 w-full rounded-full text-sm"
+                  size="md"
+                  className="w-full"
                   disabled={!canSubmit || isSubmitting}
                 >
                   {isSubmitting ? "Signing in…" : "Sign In"}

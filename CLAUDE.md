@@ -42,6 +42,7 @@ apps/web (Next.js)  ──trpc──▶  apps/server (Fastify)  ──mounts─�
 ### Auth
 
 `packages/auth` configures `better-auth` with:
+
 - Drizzle adapter (schema in `packages/db/src/schema/auth.ts`)
 - Polar payments plugin (checkout + customer portal)
 - Expo plugin for native deep-link redirects
@@ -55,6 +56,7 @@ The server mounts the auth handler at `/api/auth/*`. The web client uses `authCl
 ### Environment variables
 
 `packages/env` exports three separate validated env objects via `@t3-oss/env-core`:
+
 - `@cipher-atlas/env/server` — server-only vars (`DATABASE_URL`, `BETTER_AUTH_SECRET`, etc.)
 - `@cipher-atlas/env/web` — client-safe vars prefixed `NEXT_PUBLIC_`
 - `@cipher-atlas/env/native` — Expo vars
@@ -66,6 +68,7 @@ Each app has its own `.env` file at `apps/{web,server,native}/.env`.
 ### Web app routes
 
 `apps/web/src/app` uses Next.js route groups:
+
 - `(marketing)` — public-facing pages (landing, login, etc.)
 - `(app)` — authenticated dashboard pages
 
@@ -74,6 +77,7 @@ Each app has its own `.env` file at `apps/{web,server,native}/.env`.
 All shared shadcn/ui primitives live in `packages/ui/src/components/`. Import them as `@cipher-atlas/ui/components/<name>`.
 
 To add shared primitives (available across web + native):
+
 ```bash
 pnpm dlx shadcn add <component> -c packages/ui
 ```

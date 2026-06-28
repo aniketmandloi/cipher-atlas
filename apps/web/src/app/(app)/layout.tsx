@@ -1,4 +1,4 @@
-import Header from "@/components/header";
+import AppShell from "@/components/app-shell";
 
 export default function AppLayout({
   children,
@@ -7,8 +7,7 @@ export default function AppLayout({
 }>) {
   return (
     <div className="min-h-svh bg-background font-sans text-foreground">
-      <Header />
-      <main>{children}</main>
+      <AppShell>{children}</AppShell>
     </div>
   );
 }
