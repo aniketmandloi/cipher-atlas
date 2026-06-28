@@ -1,11 +1,16 @@
 import { db } from "@cipher-atlas/db";
 import { connector } from "@cipher-atlas/db/schema/connector";
-import { scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
+import { coverageSlice, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
 import {
   connectorScanEligibility,
   createScanInputSchema,
   getScanInputSchema,
+  redactCoverageSlice,
   redactScanJob,
+  summarizeCoverage,
+  type CoverageSliceRecord,
+  type CoverageSummary,
+  type RedactedCoverageSlice,
   type ScanConnectorScopeRecord,
   type ScanJobRecord,
 } from "@cipher-atlas/scan-domain";
@@ -149,21 +154,46 @@ export const scansRouter = router({
 
 type ScanJobRow = typeof scanJob.$inferSelect;
 type ScanConnectorRow = typeof scanJobConnector.$inferSelect;
+type CoverageSliceRow = typeof coverageSlice.$inferSelect;
 
-async function hydrateScanJobs(rows: ScanJobRow[]) {
+export interface HydratedScanJob {
+  id: string;
+  tenantId: string;
+  createdByUserId: string;
+  status: string;
+  failureMessage: string | null;
+  queuedAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  failedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  connectors: ScanConnectorScopeRecord[];
+  coverageSlices: RedactedCoverageSlice[];
+  coverageSummary: CoverageSummary;
+}
+
+async function hydrateScanJobs(rows: ScanJobRow[]): Promise<HydratedScanJob[]> {
   if (rows.length === 0) {
     return [];
   }
 
   const scanIds = rows.map((row) => row.id);
-  const scopeRows = await db
-    .select()
-    .from(scanJobConnector)
-    .where(inArray(scanJobConnector.scanJobId, scanIds));
-  const scopesByScanId = groupConnectorScopes(scopeRows);
 
-  return rows.map((row) =>
-    redactScanJob({
+  const [scopeRows, sliceRows] = await Promise.all([
+    db.select().from(scanJobConnector).where(inArray(scanJobConnector.scanJobId, scanIds)),
+    db
+      .select()
+      .from(coverageSlice)
+      .where(inArray(coverageSlice.scanJobId, scanIds))
+      .orderBy(coverageSlice.connectorDisplayName, coverageSlice.id),
+  ]);
+
+  const scopesByScanId = groupConnectorScopes(scopeRows);
+  const slicesByScanId = groupCoverageSlices(sliceRows);
+
+  return rows.map((row) => {
+    const redacted = redactScanJob({
       id: row.id,
       tenantId: row.tenantId,
       createdByUserId: row.createdByUserId,
@@ -176,8 +206,18 @@ async function hydrateScanJobs(rows: ScanJobRow[]) {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       connectors: scopesByScanId.get(row.id) ?? [],
-    } satisfies ScanJobRecord),
-  );
+    } satisfies ScanJobRecord);
+
+    const rawSlices = slicesByScanId.get(row.id) ?? [];
+    const redactedSlices = rawSlices.map(redactCoverageSlice);
+    const summary = summarizeCoverage(rawSlices);
+
+    return {
+      ...redacted,
+      coverageSlices: redactedSlices,
+      coverageSummary: summary,
+    };
+  });
 }
 
 function groupConnectorScopes(rows: ScanConnectorRow[]): Map<string, ScanConnectorScopeRecord[]> {
@@ -197,4 +237,31 @@ function groupConnectorScopes(rows: ScanConnectorRow[]): Map<string, ScanConnect
   }
 
   return scopesByScanId;
+}
+
+function groupCoverageSlices(rows: CoverageSliceRow[]): Map<string, CoverageSliceRecord[]> {
+  const slicesByScanId = new Map<string, CoverageSliceRecord[]>();
+
+  for (const row of rows) {
+    const slices = slicesByScanId.get(row.scanJobId) ?? [];
+    slices.push({
+      id: row.id,
+      scanJobId: row.scanJobId,
+      tenantId: row.tenantId,
+      connectorId: row.connectorId,
+      connectorDisplayName: row.connectorDisplayName,
+      sourceType: row.sourceType,
+      segmentLabel: row.segmentLabel,
+      coverageStatus: row.coverageStatus,
+      detailMessage: row.detailMessage,
+      startedAt: row.startedAt,
+      completedAt: row.completedAt,
+      failedAt: row.failedAt,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    });
+    slicesByScanId.set(row.scanJobId, slices);
+  }
+
+  return slicesByScanId;
 }
