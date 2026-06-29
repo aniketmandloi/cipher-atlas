@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { selectMock, transactionMock } = vi.hoisted(() => ({
   selectMock: vi.fn(),
@@ -12,11 +12,136 @@ vi.mock("@cipher-atlas/db", () => ({
   },
 }));
 
+vi.mock("@cipher-atlas/env/server", () => ({
+  env: {
+    CONNECTOR_CREDENTIAL_ENCRYPTION_KEY: "test-encryption-key",
+  },
+}));
+
+import { encryptConnectorCredentials } from "@cipher-atlas/scan-domain";
+
 import { processNextScanJob, sanitizeScanFailureMessage } from "./worker";
 
 describe("scan worker", () => {
+  beforeEach(() => {
+    selectMock.mockReset();
+    transactionMock.mockReset();
+  });
+
+  it("publishes one inventory snapshot with normalized assets for completed scans", async () => {
+    const insertedValues: unknown[] = [];
+
+    selectMock
+      .mockReturnValueOnce(
+        selectWhereRows([
+          {
+            scanJobId: "scan-1",
+            connectorId: "connector-1",
+            tenantId: "tenant-1",
+            sourceType: "github",
+            displayName: "GitHub",
+            statusAtLaunch: "usable",
+            selectedAt: new Date("2026-06-28T12:00:00.000Z"),
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectWhereRows([
+          {
+            id: "connector-1",
+            tenantId: "tenant-1",
+            credentialCiphertext: encryptConnectorCredentials(
+              { token: "ghp_1234567890abcdefghijklmnop" },
+              "test-encryption-key",
+            ),
+          },
+        ]),
+      );
+
+    transactionMock
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          select: vi
+            .fn()
+            .mockReturnValueOnce(selectRowsForUpdate([{ id: "scan-1", tenantId: "tenant-1" }]))
+            .mockReturnValueOnce(selectRows([])),
+          update: vi.fn().mockReturnValue(updateReturning([{ id: "scan-1", tenantId: "tenant-1" }])),
+          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+        }),
+      )
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          insert: vi
+            .fn()
+            .mockReturnValueOnce({
+              // snapshot insert: supports onConflictDoNothing().returning()
+              values: vi.fn().mockImplementation((values: unknown) => {
+                insertedValues.push(values);
+                return {
+                  onConflictDoNothing: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockResolvedValue([{ id: (values as { id: string }).id }]),
+                  }),
+                };
+              }),
+            })
+            .mockReturnValue({
+              // asset insert: just records values
+              values: vi.fn().mockImplementation((values: unknown) => {
+                insertedValues.push(values);
+                return Promise.resolve(undefined);
+              }),
+            }),
+          update: vi.fn().mockReturnValue(updateRecording([])),
+        }),
+      );
+
+    const result = await processNextScanJob({
+      workerId: "worker-1",
+      maxClaimAttempts: 1,
+      now: new Date("2026-06-29T12:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      scanJobId: "scan-1",
+      status: "completed",
+    });
+    expect(insertedValues[0]).toMatchObject({
+      scanJobId: "scan-1",
+      scanAttemptId: expect.any(String),
+      tenantId: "tenant-1",
+      assetCount: 2,
+    });
+    expect(insertedValues[1]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scanJobId: "scan-1",
+          tenantId: "tenant-1",
+          connectorId: "connector-1",
+          connectorDisplayName: "GitHub",
+          sourceType: "github",
+          assetClass: "dependency",
+        }),
+        expect.objectContaining({
+          scanJobId: "scan-1",
+          tenantId: "tenant-1",
+          connectorId: "connector-1",
+          connectorDisplayName: "GitHub",
+          sourceType: "github",
+          assetClass: "hndl_signal",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(insertedValues[1])).not.toContain("ghp_1234567890abcdefghijklmnop");
+
+    // Every asset must reference the snapshot that was actually inserted
+    const snapshotId = (insertedValues[0] as { id: string }).id;
+    const assetRows = insertedValues[1] as Array<{ snapshotId: string }>;
+    expect(assetRows.every((a) => a.snapshotId === snapshotId)).toBe(true);
+  });
+
   it("marks failed processing attempts with redacted terminal state", async () => {
     const persistedUpdates: Record<string, unknown>[] = [];
+    const insertedValues: unknown[] = [];
 
     selectMock.mockReturnValueOnce(
       selectWhereRows([
@@ -45,7 +170,12 @@ describe("scan worker", () => {
       )
       .mockImplementationOnce(async (callback) =>
         callback({
-          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+          insert: vi.fn().mockReturnValue({
+            values: vi.fn().mockImplementation((values: unknown) => {
+              insertedValues.push(values);
+              return Promise.resolve(undefined);
+            }),
+          }),
           update: vi.fn().mockReturnValue(updateRecording(persistedUpdates)),
         }),
       );
@@ -68,6 +198,73 @@ describe("scan worker", () => {
         }),
       ]),
     );
+    expect(insertedValues).toHaveLength(1);
+    expect(insertedValues[0]).toEqual([
+      expect.objectContaining({
+        coverageStatus: "failed",
+      }),
+    ]);
+  });
+
+  it("does not publish snapshot or assets when an unexpected error occurs during finalization (AC5 catch path)", async () => {
+    const insertedValues: unknown[] = [];
+
+    selectMock
+      .mockReturnValueOnce(
+        selectWhereRows([
+          {
+            scanJobId: "scan-1",
+            connectorId: "connector-1",
+            tenantId: "tenant-1",
+            sourceType: "github",
+            displayName: "GitHub",
+            statusAtLaunch: "usable",
+            selectedAt: new Date("2026-06-28T12:00:00.000Z"),
+          },
+        ]),
+      )
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => Promise.reject(new Error("db: credential fetch failed")),
+        }),
+      });
+
+    transactionMock
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          select: vi
+            .fn()
+            .mockReturnValueOnce(selectRowsForUpdate([{ id: "scan-1", tenantId: "tenant-1" }]))
+            .mockReturnValueOnce(selectRows([])),
+          update: vi.fn().mockReturnValue(updateReturning([{ id: "scan-1", tenantId: "tenant-1" }])),
+          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+        }),
+      )
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          insert: vi.fn().mockReturnValue({
+            values: vi.fn().mockImplementation((values: unknown) => {
+              insertedValues.push(values);
+              return Promise.resolve(undefined);
+            }),
+          }),
+          update: vi.fn().mockReturnValue(updateRecording([])),
+        }),
+      );
+
+    const result = await processNextScanJob({
+      workerId: "worker-1",
+      maxClaimAttempts: 1,
+      now: new Date("2026-06-29T12:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({ status: "failed" });
+
+    // No snapshot row and no asset rows — only coverage slices should be inserted
+    const snapshotRow = (insertedValues as unknown[]).find(
+      (v) => typeof v === "object" && v !== null && "assetCount" in (v as Record<string, unknown>),
+    );
+    expect(snapshotRow).toBeUndefined();
   });
 
   it("redacts common provider secrets from persisted failure messages", () => {

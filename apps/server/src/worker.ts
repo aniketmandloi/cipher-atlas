@@ -1,14 +1,23 @@
 import { db } from "@cipher-atlas/db";
+import { connector } from "@cipher-atlas/db/schema/connector";
+import { asset, scanSnapshot } from "@cipher-atlas/db/schema/inventory";
 import { coverageSlice, scanAttempt, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
+import { env } from "@cipher-atlas/env/server";
 import {
+  decryptConnectorCredentials,
   deriveScanTerminalStatus,
+  launchObservationCollector,
+  normalizeObservations,
+  redactEvidenceText,
   type CoverageSliceRecord,
+  type AssetRecord,
 } from "@cipher-atlas/scan-domain";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 type ScanJobConnectorRow = typeof scanJobConnector.$inferSelect;
+type ConnectorRow = typeof connector.$inferSelect;
 
 export interface ProcessNextScanJobOptions {
   workerId?: string;
@@ -76,7 +85,20 @@ export async function processNextScanJob(
     const terminalStatus = deriveScanTerminalStatus(slices);
 
     if (terminalStatus === "completed") {
-      await finalizeScanJobWithCoverage(claim, finishedAt, slices, "completed");
+      const snapshotPublication = await buildSnapshotPublication({
+        claim,
+        connectorRows,
+        slices,
+        finishedAt,
+      });
+      await finalizeScanJobWithCoverage(
+        claim,
+        finishedAt,
+        slices,
+        "completed",
+        undefined,
+        snapshotPublication,
+      );
       return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "completed" };
     }
 
@@ -219,8 +241,47 @@ async function finalizeScanJobWithCoverage(
   slices: CoverageSliceRecord[],
   terminalStatus: "completed" | "failed",
   failureMessage?: string,
+  snapshotPublication?: SnapshotPublication,
 ) {
   await db.transaction(async (tx) => {
+    if (snapshotPublication) {
+      const [insertedSnapshot] = await tx
+        .insert(scanSnapshot)
+        .values({
+          id: snapshotPublication.snapshotId,
+          scanJobId: claim.scanJobId,
+          scanAttemptId: claim.attemptId,
+          tenantId: claim.tenantId,
+          assetCount: snapshotPublication.assets.length,
+          publishedAt: finishedAt,
+          createdAt: finishedAt,
+          updatedAt: finishedAt,
+        })
+        .onConflictDoNothing()
+        .returning({ id: scanSnapshot.id });
+
+      if (insertedSnapshot && snapshotPublication.assets.length > 0) {
+        await tx.insert(asset).values(
+          snapshotPublication.assets.map((record) => ({
+            id: record.id,
+            snapshotId: record.snapshotId,
+            scanJobId: record.scanJobId,
+            tenantId: record.tenantId,
+            connectorId: record.connectorId,
+            connectorDisplayName: record.connectorDisplayName,
+            sourceType: record.sourceType,
+            assetClass: record.assetClass,
+            sourceRef: record.sourceRef,
+            identifier: record.identifier,
+            evidence: record.evidence,
+            capturedAt: record.capturedAt,
+            createdAt: finishedAt,
+            updatedAt: finishedAt,
+          })),
+        );
+      }
+    }
+
     if (slices.length > 0) {
       await tx.insert(coverageSlice).values(
         slices.map((s) => ({
@@ -274,6 +335,83 @@ async function finalizeScanJobWithCoverage(
   });
 }
 
+interface SnapshotPublication {
+  snapshotId: string;
+  assets: AssetRecord[];
+}
+
+async function buildSnapshotPublication({
+  claim,
+  connectorRows,
+  slices,
+  finishedAt,
+}: {
+  claim: ClaimedScanJob;
+  connectorRows: ScanJobConnectorRow[];
+  slices: CoverageSliceRecord[];
+  finishedAt: Date;
+}): Promise<SnapshotPublication> {
+  const snapshotId = randomUUID();
+  const completedConnectorIds = new Set(
+    slices
+      .filter((slice) => slice.coverageStatus === "completed")
+      .map((slice) => slice.connectorId)
+      .filter((connectorId): connectorId is string => Boolean(connectorId)),
+  );
+  const completedConnectorRows = connectorRows.filter((row) => completedConnectorIds.has(row.connectorId));
+  const credentialRows = await loadConnectorCredentials([...completedConnectorIds], claim.tenantId);
+  const observations = [];
+
+  for (const row of completedConnectorRows) {
+    const credentialRow = credentialRows.get(row.connectorId);
+    if (!credentialRow) {
+      console.warn(`[worker] Credential row missing for connector ${row.connectorId} — skipping observation collection`);
+      continue;
+    }
+
+    const decryptedCredentials = decryptConnectorCredentials(
+      credentialRow.credentialCiphertext,
+      env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY,
+    );
+    observations.push(
+      ...(await launchObservationCollector.collectObservations(
+        {
+          tenantId: claim.tenantId,
+          snapshotId,
+          scanJobId: claim.scanJobId,
+          scanAttemptId: claim.attemptId,
+          connectorId: row.connectorId,
+          connectorDisplayName: row.displayName,
+          sourceType: row.sourceType,
+          capturedAt: finishedAt,
+        },
+        decryptedCredentials,
+      )),
+    );
+  }
+
+  return {
+    snapshotId,
+    assets: normalizeObservations(observations),
+  };
+}
+
+async function loadConnectorCredentials(
+  connectorIds: string[],
+  tenantId: string,
+): Promise<Map<string, ConnectorRow>> {
+  if (connectorIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await db
+    .select()
+    .from(connector)
+    .where(and(inArray(connector.id, connectorIds), eq(connector.tenantId, tenantId)));
+
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
 async function failClaimedScanJob(
   claim: ClaimedScanJob,
   finishedAt: Date,
@@ -311,14 +449,7 @@ async function failClaimedScanJob(
 
 export function sanitizeScanFailureMessage(error: unknown): string {
   const rawMessage = error instanceof Error ? error.message : String(error);
-  const redacted = rawMessage
-    .replace(/gh[pousr]_[A-Za-z0-9_]{20,}/g, "[redacted-token]")
-    .replace(/AKIA[0-9A-Z]{16}/g, "[redacted-access-key]")
-    .replace(/ASIA[0-9A-Z]{16}/g, "[redacted-access-key]")
-    .replace(
-      /(?<key>secret|token|password|credential|authorization)(?<sep>\s*[:=]\s*)(?<value>[^\s,;]+)/gi,
-      "$<key>$<sep>[redacted]",
-    );
+  const redacted = redactEvidenceText(rawMessage).value;
 
   return redacted.trim().slice(0, 500) || "Scan failed.";
 }
