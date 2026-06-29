@@ -112,7 +112,7 @@ describe("scan orchestration", () => {
       }),
     ).toEqual({
       eligible: false,
-      reason: "Invalid AWS is invalid: Bad key",
+      reason: "Invalid AWS is invalid. Revalidate or recreate it before launching a scan.",
     });
   });
 

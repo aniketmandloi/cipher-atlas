@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import type Link from "next/link";
+import NextLink from "next/link";
+
+type Href = Parameters<typeof NextLink>[0]["href"];
 
 import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Button } from "@cipher-atlas/ui/components/motion";
@@ -10,69 +14,17 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { trpc } from "@/utils/trpc";
-
-type ScanStatus = "queued" | "running" | "completed" | "failed";
-type ConnectorStatus = "pending_validation" | "usable" | "invalid" | "unsupported";
-
-function scanStatusBadgeProps(status: ScanStatus): {
-  variant: "outline" | "destructive" | "secondary";
-  className?: string;
-} {
-  switch (status) {
-    case "queued":
-      return { variant: "secondary" };
-    case "running":
-      return {
-        variant: "outline",
-        className: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-      };
-    case "completed":
-      return {
-        variant: "outline",
-        className:
-          "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-      };
-    case "failed":
-      return { variant: "destructive" };
-  }
-}
-
-function scanStatusLabel(status: ScanStatus): string {
-  switch (status) {
-    case "queued":
-      return "Queued";
-    case "running":
-      return "Running";
-    case "completed":
-      return "Completed";
-    case "failed":
-      return "Failed";
-  }
-}
-
-function connectorBlockedMessage(
-  status: ConnectorStatus,
-  lastValidationMessage: string | null,
-): string {
-  switch (status) {
-    case "pending_validation":
-      return "Pending validation — validate this connector before launching a scan.";
-    case "invalid":
-      return lastValidationMessage ?? "Invalid — revalidate or recreate before launching a scan.";
-    case "unsupported":
-      return "Unsupported source type for scanning.";
-    default:
-      return "Not eligible for scan launch.";
-  }
-}
-
-function formatDate(date: Date | string | null): string {
-  if (!date) return "—";
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(date));
-}
+import {
+  connectorBlockedMessage,
+  coverageBadgeProps,
+  coverageLabel,
+  formatDate,
+  scanStatusBadgeProps,
+  scanStatusLabel,
+  type ConnectorStatus,
+  type CoverageOverall,
+  type ScanStatus,
+} from "./scans-utils";
 
 export default function ScansView() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -285,62 +237,80 @@ export default function ScansView() {
             const { className: badgeCls, ...badgeProps } = scanStatusBadgeProps(
               scan.status as ScanStatus,
             );
+            const overall = scan.coverageSummary.overall as CoverageOverall;
+            const showCoverage =
+              scan.status === "completed" || scan.status === "failed";
+            const { className: covCls, ...covProps } = coverageBadgeProps(overall);
+
             return (
-              <Card key={scan.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <CardTitle className="font-display text-base font-medium">
-                        {scan.connectors.length > 0
-                          ? scan.connectors.map((c) => c.displayName).join(", ")
-                          : "No connectors"}
-                      </CardTitle>
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {scan.connectors.map((c) => c.sourceType).join(" · ")}
-                      </p>
+              <NextLink
+                key={scan.id}
+                href={`/dashboard/scans/${scan.id}` as Href}
+                className="block transition-opacity hover:opacity-80"
+              >
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <CardTitle className="font-display text-base font-medium">
+                          {scan.connectors.length > 0
+                            ? scan.connectors.map((c) => c.displayName).join(", ")
+                            : "No connectors"}
+                        </CardTitle>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {scan.connectors.map((c) => c.sourceType).join(" · ")}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {showCoverage && (
+                          <Badge {...covProps} className={`px-2.5 ${covCls ?? ""}`}>
+                            {coverageLabel(overall)}
+                          </Badge>
+                        )}
+                        <Badge {...badgeProps} className={`px-2.5 ${badgeCls ?? ""}`}>
+                          {scanStatusLabel(scan.status as ScanStatus)}
+                        </Badge>
+                      </div>
                     </div>
-                    <Badge {...badgeProps} className={`shrink-0 px-2.5 ${badgeCls ?? ""}`}>
-                      {scanStatusLabel(scan.status as ScanStatus)}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs">
-                    <div>
-                      <p className="text-muted-foreground">Created</p>
-                      <p className="mt-0.5">{formatDate(scan.createdAt)}</p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Created</p>
+                        <p className="mt-0.5">{formatDate(scan.createdAt)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Queued</p>
+                        <p className="mt-0.5">{formatDate(scan.queuedAt)}</p>
+                      </div>
+                      {scan.startedAt && (
+                        <div>
+                          <p className="text-muted-foreground">Started</p>
+                          <p className="mt-0.5">{formatDate(scan.startedAt)}</p>
+                        </div>
+                      )}
+                      {scan.completedAt && (
+                        <div>
+                          <p className="text-muted-foreground">Completed</p>
+                          <p className="mt-0.5">{formatDate(scan.completedAt)}</p>
+                        </div>
+                      )}
+                      {scan.failedAt && (
+                        <div>
+                          <p className="text-muted-foreground">Failed At</p>
+                          <p className="mt-0.5">{formatDate(scan.failedAt)}</p>
+                        </div>
+                      )}
+                      {scan.failureMessage && (
+                        <div className="col-span-2">
+                          <p className="text-muted-foreground">Failure</p>
+                          <p className="mt-0.5 text-destructive">{scan.failureMessage}</p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-muted-foreground">Queued</p>
-                      <p className="mt-0.5">{formatDate(scan.queuedAt)}</p>
-                    </div>
-                    {scan.startedAt && (
-                      <div>
-                        <p className="text-muted-foreground">Started</p>
-                        <p className="mt-0.5">{formatDate(scan.startedAt)}</p>
-                      </div>
-                    )}
-                    {scan.completedAt && (
-                      <div>
-                        <p className="text-muted-foreground">Completed</p>
-                        <p className="mt-0.5">{formatDate(scan.completedAt)}</p>
-                      </div>
-                    )}
-                    {scan.failedAt && (
-                      <div>
-                        <p className="text-muted-foreground">Failed At</p>
-                        <p className="mt-0.5">{formatDate(scan.failedAt)}</p>
-                      </div>
-                    )}
-                    {scan.failureMessage && (
-                      <div className="col-span-2">
-                        <p className="text-muted-foreground">Failure</p>
-                        <p className="mt-0.5 text-destructive">{scan.failureMessage}</p>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </NextLink>
             );
           })}
         </div>

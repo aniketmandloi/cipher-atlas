@@ -8,7 +8,7 @@
     "compile": "bun build --compile --minify --sourcemap --bytecode ./src/index.ts --outfile server",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.mjs",
-    "test": "vitest run --maxWorkers=1",
+    "test": "vitest run --maxWorkers=1 --exclude=dist/**",
     "worker": "tsx src/worker.ts",
     "worker:once": "tsx src/worker.ts --once"
   },
@@ -17,6 +17,7 @@
     "@cipher-atlas/auth": "workspace:*",
     "@cipher-atlas/db": "workspace:*",
     "@cipher-atlas/env": "workspace:*",
+    "@cipher-atlas/scan-domain": "workspace:*",
     "@fastify/cors": "^11.0.1",
     "@hono/trpc-server": "^0.4.0",
     "@trpc/server": "catalog:",

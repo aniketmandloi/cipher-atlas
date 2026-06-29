@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { transactionMock } = vi.hoisted(() => ({
+const { selectMock, transactionMock } = vi.hoisted(() => ({
+  selectMock: vi.fn(),
   transactionMock: vi.fn(),
 }));
 
 vi.mock("@cipher-atlas/db", () => ({
   db: {
+    select: selectMock,
     transaction: transactionMock,
   },
 }));
@@ -16,12 +18,26 @@ describe("scan worker", () => {
   it("marks failed processing attempts with redacted terminal state", async () => {
     const persistedUpdates: Record<string, unknown>[] = [];
 
+    selectMock.mockReturnValueOnce(
+      selectWhereRows([
+        {
+          scanJobId: "scan-1",
+          connectorId: "connector-1",
+          tenantId: "tenant-1",
+          sourceType: "github",
+          displayName: "GitHub",
+          statusAtLaunch: "usable",
+          selectedAt: new Date("2026-06-28T12:00:00.000Z"),
+        },
+      ]),
+    );
+
     transactionMock
       .mockImplementationOnce(async (callback) =>
         callback({
           select: vi
             .fn()
-            .mockReturnValueOnce(selectRows([{ id: "scan-1", tenantId: "tenant-1" }]))
+            .mockReturnValueOnce(selectRowsForUpdate([{ id: "scan-1", tenantId: "tenant-1" }]))
             .mockReturnValueOnce(selectRows([])),
           update: vi.fn().mockReturnValue(updateReturning([{ id: "scan-1", tenantId: "tenant-1" }])),
           insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
@@ -29,6 +45,7 @@ describe("scan worker", () => {
       )
       .mockImplementationOnce(async (callback) =>
         callback({
+          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
           update: vi.fn().mockReturnValue(updateRecording(persistedUpdates)),
         }),
       );
@@ -85,6 +102,28 @@ function selectRows(rows: unknown[]) {
           limit: vi.fn().mockResolvedValue(rows),
         }),
       }),
+    }),
+  };
+}
+
+function selectRowsForUpdate(rows: unknown[]) {
+  return {
+    from: () => ({
+      where: () => ({
+        orderBy: () => ({
+          limit: () => ({
+            for: vi.fn().mockResolvedValue(rows),
+          }),
+        }),
+      }),
+    }),
+  };
+}
+
+function selectWhereRows(rows: unknown[]) {
+  return {
+    from: () => ({
+      where: vi.fn().mockResolvedValue(rows),
     }),
   };
 }

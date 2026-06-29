@@ -1,3 +1,5 @@
+export * from "./coverage";
+
 import { z } from "zod";
 
 import { connectorStatusSchema, connectorSourceTypeSchema } from "../connectors/types";

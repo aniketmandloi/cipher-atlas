@@ -1,12 +1,19 @@
 import { db } from "@cipher-atlas/db";
-import { scanAttempt, scanJob } from "@cipher-atlas/db/schema/scan";
+import { coverageSlice, scanAttempt, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
+import {
+  deriveScanTerminalStatus,
+  type CoverageSliceRecord,
+} from "@cipher-atlas/scan-domain";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
+type ScanJobConnectorRow = typeof scanJobConnector.$inferSelect;
+
 export interface ProcessNextScanJobOptions {
   workerId?: string;
   failWithMessage?: string;
+  failConnectorIds?: string[];
   now?: Date;
   maxClaimAttempts?: number;
 }
@@ -21,6 +28,7 @@ interface ClaimedScanJob {
   scanJobId: string;
   tenantId: string;
   attemptId: string;
+  claimedAt: Date;
 }
 
 export async function processNextScanJob(
@@ -38,29 +46,66 @@ export async function processNextScanJob(
     return null;
   }
 
+  let connectorRows: ScanJobConnectorRow[] = [];
+
   try {
-    if (options.failWithMessage) {
-      throw new Error(options.failWithMessage);
-    }
+    connectorRows = await db
+      .select()
+      .from(scanJobConnector)
+      .where(eq(scanJobConnector.scanJobId, claim.scanJobId));
 
     const finishedAt = new Date();
-    await completeScanJob(claim, finishedAt);
+    const failConnectorIds = new Set(options.failConnectorIds ?? []);
+    const jobFailMessage = options.failWithMessage
+      ? sanitizeScanFailureMessage(new Error(options.failWithMessage))
+      : undefined;
 
-    return {
-      scanJobId: claim.scanJobId,
-      attemptId: claim.attemptId,
-      status: "completed",
-    };
+    const slices = connectorRows.map((row) =>
+      buildCoverageSlice({
+        claim,
+        row,
+        startedAt: claim.claimedAt,
+        finishedAt,
+        shouldFail: jobFailMessage !== undefined || failConnectorIds.has(row.connectorId),
+        detailMessage:
+          jobFailMessage ??
+          `Connector ${row.displayName} failed during scan. Re-check connector access, validate read scope, and retry the scan.`,
+      }),
+    );
+
+    const terminalStatus = deriveScanTerminalStatus(slices);
+
+    if (terminalStatus === "completed") {
+      await finalizeScanJobWithCoverage(claim, finishedAt, slices, "completed");
+      return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "completed" };
+    }
+
+    const failureMessage =
+      jobFailMessage ?? "Scan failed. One or more connectors could not be scanned.";
+    await finalizeScanJobWithCoverage(claim, finishedAt, slices, "failed", failureMessage);
+    return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "failed" };
   } catch (error) {
     const finishedAt = new Date();
     const failureMessage = sanitizeScanFailureMessage(error);
-    await failScanJob(claim, finishedAt, failureMessage);
 
-    return {
-      scanJobId: claim.scanJobId,
-      attemptId: claim.attemptId,
-      status: "failed",
-    };
+    if (connectorRows.length === 0) {
+      await failClaimedScanJob(claim, finishedAt, failureMessage);
+      return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "failed" };
+    }
+
+    const failedSlices = connectorRows.map((row) =>
+      buildCoverageSlice({
+        claim,
+        row,
+        startedAt: claim.claimedAt,
+        finishedAt,
+        shouldFail: true,
+        detailMessage: failureMessage,
+      }),
+    );
+
+    await finalizeScanJobWithCoverage(claim, finishedAt, failedSlices, "failed", failureMessage);
+    return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "failed" };
   }
 }
 
@@ -89,11 +134,7 @@ async function claimNextScanJob({
 
       const [claimedJob] = await tx
         .update(scanJob)
-        .set({
-          status: "running",
-          startedAt: claimedAt,
-          updatedAt: claimedAt,
-        })
+        .set({ status: "running", startedAt: claimedAt, updatedAt: claimedAt })
         .where(and(eq(scanJob.id, nextJob.id), eq(scanJob.status, "queued")))
         .returning();
 
@@ -126,6 +167,7 @@ async function claimNextScanJob({
         scanJobId: claimedJob.id,
         tenantId: claimedJob.tenantId,
         attemptId,
+        claimedAt,
       } satisfies ClaimedScanJob;
     });
 
@@ -137,13 +179,77 @@ async function claimNextScanJob({
   return null;
 }
 
-async function completeScanJob(claim: ClaimedScanJob, finishedAt: Date) {
+function buildCoverageSlice({
+  claim,
+  row,
+  startedAt,
+  finishedAt,
+  shouldFail,
+  detailMessage,
+}: {
+  claim: ClaimedScanJob;
+  row: ScanJobConnectorRow;
+  startedAt: Date;
+  finishedAt: Date;
+  shouldFail: boolean;
+  detailMessage: string;
+}): CoverageSliceRecord {
+  return {
+    id: randomUUID(),
+    scanJobId: claim.scanJobId,
+    scanAttemptId: claim.attemptId,
+    tenantId: claim.tenantId,
+    connectorId: row.connectorId,
+    connectorDisplayName: row.displayName,
+    sourceType: row.sourceType,
+    segmentLabel: null,
+    coverageStatus: shouldFail ? "failed" : "completed",
+    detailMessage: shouldFail ? sanitizeScanFailureMessage(detailMessage) : null,
+    startedAt,
+    completedAt: shouldFail ? null : finishedAt,
+    failedAt: shouldFail ? finishedAt : null,
+    createdAt: finishedAt,
+    updatedAt: finishedAt,
+  };
+}
+
+async function finalizeScanJobWithCoverage(
+  claim: ClaimedScanJob,
+  finishedAt: Date,
+  slices: CoverageSliceRecord[],
+  terminalStatus: "completed" | "failed",
+  failureMessage?: string,
+) {
   await db.transaction(async (tx) => {
+    if (slices.length > 0) {
+      await tx.insert(coverageSlice).values(
+        slices.map((s) => ({
+          id: s.id,
+          scanJobId: s.scanJobId,
+          scanAttemptId: s.scanAttemptId,
+          tenantId: s.tenantId,
+          connectorId: s.connectorId,
+          connectorDisplayName: s.connectorDisplayName,
+          sourceType: s.sourceType,
+          segmentLabel: s.segmentLabel,
+          coverageStatus: s.coverageStatus,
+          detailMessage: s.detailMessage,
+          startedAt: s.startedAt,
+          completedAt: s.completedAt,
+          failedAt: s.failedAt,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+        })),
+      );
+    }
+
     await tx
       .update(scanAttempt)
       .set({
-        status: "completed",
-        completedAt: finishedAt,
+        status: terminalStatus,
+        completedAt: terminalStatus === "completed" ? finishedAt : null,
+        failedAt: terminalStatus === "failed" ? finishedAt : null,
+        failureMessage: failureMessage ?? null,
         heartbeatAt: finishedAt,
         updatedAt: finishedAt,
       })
@@ -158,17 +264,21 @@ async function completeScanJob(claim: ClaimedScanJob, finishedAt: Date) {
     await tx
       .update(scanJob)
       .set({
-        status: "completed",
-        completedAt: finishedAt,
-        failedAt: null,
-        failureMessage: null,
+        status: terminalStatus,
+        completedAt: terminalStatus === "completed" ? finishedAt : null,
+        failedAt: terminalStatus === "failed" ? finishedAt : null,
+        failureMessage: failureMessage ?? null,
         updatedAt: finishedAt,
       })
       .where(and(eq(scanJob.id, claim.scanJobId), eq(scanJob.tenantId, claim.tenantId)));
   });
 }
 
-async function failScanJob(claim: ClaimedScanJob, finishedAt: Date, failureMessage: string) {
+async function failClaimedScanJob(
+  claim: ClaimedScanJob,
+  finishedAt: Date,
+  failureMessage: string,
+) {
   await db.transaction(async (tx) => {
     await tx
       .update(scanAttempt)
