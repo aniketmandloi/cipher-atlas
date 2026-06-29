@@ -245,18 +245,22 @@ async function finalizeScanJobWithCoverage(
 ) {
   await db.transaction(async (tx) => {
     if (snapshotPublication) {
-      await tx.insert(scanSnapshot).values({
-        id: snapshotPublication.snapshotId,
-        scanJobId: claim.scanJobId,
-        scanAttemptId: claim.attemptId,
-        tenantId: claim.tenantId,
-        assetCount: snapshotPublication.assets.length,
-        publishedAt: finishedAt,
-        createdAt: finishedAt,
-        updatedAt: finishedAt,
-      });
+      const [insertedSnapshot] = await tx
+        .insert(scanSnapshot)
+        .values({
+          id: snapshotPublication.snapshotId,
+          scanJobId: claim.scanJobId,
+          scanAttemptId: claim.attemptId,
+          tenantId: claim.tenantId,
+          assetCount: snapshotPublication.assets.length,
+          publishedAt: finishedAt,
+          createdAt: finishedAt,
+          updatedAt: finishedAt,
+        })
+        .onConflictDoNothing()
+        .returning({ id: scanSnapshot.id });
 
-      if (snapshotPublication.assets.length > 0) {
+      if (insertedSnapshot && snapshotPublication.assets.length > 0) {
         await tx.insert(asset).values(
           snapshotPublication.assets.map((record) => ({
             id: record.id,
@@ -361,7 +365,8 @@ async function buildSnapshotPublication({
   for (const row of completedConnectorRows) {
     const credentialRow = credentialRows.get(row.connectorId);
     if (!credentialRow) {
-      throw new Error(`Missing credential row for connector ${row.connectorId}`);
+      console.warn(`[worker] Credential row missing for connector ${row.connectorId} — skipping observation collection`);
+      continue;
     }
 
     const decryptedCredentials = decryptConnectorCredentials(

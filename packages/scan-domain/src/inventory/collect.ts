@@ -31,7 +31,11 @@ export const launchObservationCollector: ObservationCollector = {
       return collectGitHubObservations(connectorScope, githubCredentialSchema.parse(decryptedCredentials));
     }
 
-    return collectAwsObservations(connectorScope, awsCredentialSchema.parse(decryptedCredentials));
+    if (connectorScope.sourceType === "aws") {
+      return collectAwsObservations(connectorScope, awsCredentialSchema.parse(decryptedCredentials));
+    }
+
+    throw new Error(`Unsupported connector source type for observation collection: ${connectorScope.sourceType}`);
   },
 };
 

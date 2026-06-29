@@ -23,8 +23,9 @@ const redactionRules = [
   },
   {
     id: "named-secret",
+    // sep allows optional quotes so JSON-serialised form (key":"value) is also matched
     pattern:
-      /(?<key>secret|token|password|credential|authorization|accessKeyId|secretAccessKey|sessionToken)(?<sep>\s*[:=]\s*)(?<value>[^\s,;}]+)/gi,
+      /(?<key>secret|token|password|credential|authorization|accessKeyId|secretAccessKey|sessionToken)(?<sep>"?\s*[:=]"?\s*)(?<value>[^\s,;}"]+)/gi,
     replacement: "$<key>$<sep>[redacted]",
   },
 ] as const;

@@ -11,9 +11,22 @@ import {
 } from "../shared";
 
 export function normalizeObservations(observations: Observation[]): AssetRecord[] {
-  return observations
-    .map((observation) => normalizeObservation(observationSchema.parse(observation)))
-    .sort((left, right) => left.id.localeCompare(right.id));
+  const assets: AssetRecord[] = [];
+  let skipped = 0;
+
+  for (const observation of observations) {
+    try {
+      assets.push(normalizeObservation(observationSchema.parse(observation)));
+    } catch {
+      skipped += 1;
+    }
+  }
+
+  if (skipped > 0) {
+    console.warn(`[scan-domain] normalizeObservations: skipped ${skipped} invalid observation(s)`);
+  }
+
+  return assets.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 export function buildEvidenceEnvelope(observation: Observation): EvidenceEnvelope {
@@ -22,7 +35,10 @@ export function buildEvidenceEnvelope(observation: Observation): EvidenceEnvelop
     redacted.value && typeof redacted.value === "object" && !Array.isArray(redacted.value)
       ? (redacted.value as Record<string, unknown>)
       : { value: redacted.value };
-  const certificate = extractCertificateLifecycle(observation.evidence);
+  const certResult = extractCertificateLifecycle(observation.evidence);
+
+  // certResult === null means cert input was present but failed to parse
+  const certMetadata = certResult === null ? { ...metadata, _certParseFailed: true } : metadata;
 
   return {
     sourceRef: observation.sourceRef,
@@ -30,26 +46,27 @@ export function buildEvidenceEnvelope(observation: Observation): EvidenceEnvelop
     capturedAt: observation.capturedAt,
     redacted: redacted.metadata.fields.length > 0 || redacted.metadata.rulesApplied.length > 0,
     redaction: redacted.metadata,
-    metadata,
-    ...(certificate ? { certificate } : {}),
+    metadata: certMetadata,
+    ...(certResult ? { certificate: certResult } : {}),
   };
 }
 
-export function extractCertificateLifecycle(evidence: Record<string, unknown>): CertificateLifecycle | undefined {
+// Returns CertificateLifecycle on success, null if input present but parse failed, undefined if no cert input.
+export function extractCertificateLifecycle(
+  evidence: Record<string, unknown>,
+): CertificateLifecycle | null | undefined {
   const pem = evidence["certificatePem"];
   const der = evidence["certificateDer"];
+
+  if (typeof pem !== "string" && typeof der !== "string") {
+    return undefined;
+  }
 
   try {
     const certificate =
       typeof pem === "string"
         ? new X509Certificate(pem)
-        : typeof der === "string"
-          ? new X509Certificate(Buffer.from(der, "base64"))
-          : undefined;
-
-    if (!certificate) {
-      return undefined;
-    }
+        : new X509Certificate(Buffer.from(der as string, "base64"));
 
     return {
       serialNumber: certificate.serialNumber,
@@ -60,7 +77,7 @@ export function extractCertificateLifecycle(evidence: Record<string, unknown>): 
       fingerprint: certificate.fingerprint256,
     };
   } catch {
-    return undefined;
+    return null;
   }
 }
 
@@ -94,9 +111,18 @@ function deriveIdentifier(observation: Observation, evidence: EvidenceEnvelope):
     return evidence.certificate.fingerprint;
   }
 
-  const explicitIdentifier = observation.evidence["identifier"];
-  if (typeof explicitIdentifier === "string" && explicitIdentifier.trim()) {
-    return explicitIdentifier.trim();
+  // Cert input present but parse failed — hash the raw content for a unique fallback
+  const pem = observation.evidence["certificatePem"];
+  const der = observation.evidence["certificateDer"];
+  if (typeof pem === "string" || typeof der === "string") {
+    const content = typeof pem === "string" ? pem : (der as string);
+    return createHash("sha256").update(content).digest("hex");
+  }
+
+  // Read identifier from the already-redacted metadata to avoid persisting raw secrets
+  const redactedIdentifier = evidence.metadata["identifier"];
+  if (typeof redactedIdentifier === "string" && redactedIdentifier.trim()) {
+    return redactedIdentifier.trim();
   }
 
   return `${observation.assetClass}:${observation.sourceRef}:${observation.locator}`;
@@ -105,14 +131,14 @@ function deriveIdentifier(observation: Observation, evidence: EvidenceEnvelope):
 function stableAssetId(observation: Observation, identifier: string): string {
   const hash = createHash("sha256")
     .update(
-      [
+      JSON.stringify([
         observation.snapshotId,
         observation.connectorId,
         observation.sourceType,
         observation.assetClass,
         observation.sourceRef,
         identifier,
-      ].join("|"),
+      ]),
     )
     .digest("hex")
     .slice(0, 32);

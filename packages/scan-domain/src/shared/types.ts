@@ -57,7 +57,7 @@ export const assetRecordSchema = z.object({
   scanJobId: z.string().min(1),
   scanAttemptId: z.string().min(1),
   tenantId: z.string().min(1),
-  connectorId: z.string().min(1),
+  connectorId: z.string().min(1).nullable(),
   connectorDisplayName: z.string().min(1),
   sourceType: connectorSourceTypeSchema,
   assetClass: assetClassSchema,

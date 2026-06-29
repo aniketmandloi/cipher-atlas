@@ -4,10 +4,12 @@ import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } 
 import { connector, connectorSourceType } from "./connector";
 import { scanAttempt, scanJob } from "./scan";
 
+// Date fields are stored as ISO strings in jsonb and returned as strings on read.
+// Using Date | string accurately reflects both the write-time and read-time shapes.
 interface InventoryEvidenceEnvelope {
   sourceRef: string;
   locator: string;
-  capturedAt: Date;
+  capturedAt: Date | string;
   redacted: boolean;
   redaction: {
     fields: string[];
@@ -18,8 +20,8 @@ interface InventoryEvidenceEnvelope {
     serialNumber: string;
     subject: string;
     issuer: string;
-    notBefore: Date;
-    notAfter: Date;
+    notBefore: Date | string;
+    notAfter: Date | string;
     fingerprint: string;
   };
 }
