@@ -9,7 +9,10 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "check-types": "tsc -b",
+    "test": "vitest run --maxWorkers=1 --exclude=dist/**"
+  },
   "dependencies": {
     "@cipher-atlas/auth": "workspace:*",
     "@cipher-atlas/db": "workspace:*",
@@ -25,6 +28,7 @@
   },
   "devDependencies": {
     "@cipher-atlas/config": "workspace:*",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "^4.1.9"
   }
 }
