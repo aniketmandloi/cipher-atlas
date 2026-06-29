@@ -1,5 +1,5 @@
-import { relations } from "drizzle-orm";
-import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { check, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 import { connectorSourceType } from "./connector";
 import { asset, inventoryAssetClass, scanSnapshot } from "./inventory";
@@ -66,6 +66,11 @@ export const finding = pgTable(
     index("finding_tenant_id_idx").on(table.tenantId),
     index("finding_snapshot_id_idx").on(table.snapshotId),
     index("finding_snapshot_category_idx").on(table.snapshotId, table.category),
+    check(
+      "finding_category_code_match",
+      sql`(${table.category} = 'certificate' AND ${table.code} IN ('certificate_expired', 'certificate_expiring_soon'))
+          OR (${table.category} = 'tls' AND ${table.code} IN ('tls_outdated_protocol', 'tls_weak_cipher'))`,
+    ),
   ],
 );
 

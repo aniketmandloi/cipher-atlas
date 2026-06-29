@@ -159,11 +159,11 @@ function evidence(overrides: Partial<EvidenceEnvelope> = {}): EvidenceEnvelope {
       fields: ["token"],
       rulesApplied: ["secret-pattern"],
     },
+    ...overrides,
     metadata: {
       token: "[redacted]",
       ...overrides.metadata,
     },
-    ...overrides,
   };
 }
 
