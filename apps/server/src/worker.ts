@@ -1,16 +1,19 @@
 import { db } from "@cipher-atlas/db";
 import { connector } from "@cipher-atlas/db/schema/connector";
+import { finding } from "@cipher-atlas/db/schema/finding";
 import { asset, scanSnapshot } from "@cipher-atlas/db/schema/inventory";
 import { coverageSlice, scanAttempt, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
 import { env } from "@cipher-atlas/env/server";
 import {
   decryptConnectorCredentials,
+  deriveFindings,
   deriveScanTerminalStatus,
   launchObservationCollector,
   normalizeObservations,
   redactEvidenceText,
   type CoverageSliceRecord,
   type AssetRecord,
+  type Finding,
 } from "@cipher-atlas/scan-domain";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -63,7 +66,7 @@ export async function processNextScanJob(
       .from(scanJobConnector)
       .where(eq(scanJobConnector.scanJobId, claim.scanJobId));
 
-    const finishedAt = new Date();
+    const finishedAt = options.now ?? new Date();
     const failConnectorIds = new Set(options.failConnectorIds ?? []);
     const jobFailMessage = options.failWithMessage
       ? sanitizeScanFailureMessage(new Error(options.failWithMessage))
@@ -280,6 +283,33 @@ async function finalizeScanJobWithCoverage(
           })),
         );
       }
+
+      if (insertedSnapshot && snapshotPublication.findings.length > 0) {
+        await tx
+          .insert(finding)
+          .values(
+            snapshotPublication.findings.map((record) => ({
+              id: record.id,
+              snapshotId: record.snapshotId,
+              scanJobId: record.scanJobId,
+              scanAttemptId: record.scanAttemptId,
+              tenantId: record.tenantId,
+              assetId: record.assetId,
+              assetClass: record.assetClass,
+              category: record.category,
+              code: record.code,
+              title: record.title,
+              rationale: record.rationale,
+              sourceType: record.sourceType,
+              sourceRef: record.sourceRef,
+              evidence: record.evidence,
+              detectedAt: record.detectedAt,
+              createdAt: finishedAt,
+              updatedAt: finishedAt,
+            })),
+          )
+          .onConflictDoNothing({ target: [finding.snapshotId, finding.assetId, finding.code] });
+      }
     }
 
     if (slices.length > 0) {
@@ -338,6 +368,7 @@ async function finalizeScanJobWithCoverage(
 interface SnapshotPublication {
   snapshotId: string;
   assets: AssetRecord[];
+  findings: Finding[];
 }
 
 async function buildSnapshotPublication({
@@ -390,9 +421,12 @@ async function buildSnapshotPublication({
     );
   }
 
+  const assets = normalizeObservations(observations);
+
   return {
     snapshotId,
-    assets: normalizeObservations(observations),
+    assets,
+    findings: deriveFindings(assets, { now: finishedAt }),
   };
 }
 

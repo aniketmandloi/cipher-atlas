@@ -139,6 +139,111 @@ describe("scan worker", () => {
     expect(assetRows.every((a) => a.snapshotId === snapshotId)).toBe(true);
   });
 
+  it("publishes assets for completed AWS snapshots and skips finding insert when evidence yields no findings", async () => {
+    const insertedValues: unknown[] = [];
+
+    selectMock
+      .mockReturnValueOnce(
+        selectWhereRows([
+          {
+            scanJobId: "scan-1",
+            connectorId: "connector-1",
+            tenantId: "tenant-1",
+            sourceType: "aws",
+            displayName: "AWS",
+            statusAtLaunch: "usable",
+            selectedAt: new Date("2026-06-28T12:00:00.000Z"),
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectWhereRows([
+          {
+            id: "connector-1",
+            tenantId: "tenant-1",
+            credentialCiphertext: encryptConnectorCredentials(
+              {
+                accessKeyId: "AKIA1234567890ABCDEF",
+                secretAccessKey: "x".repeat(40),
+                sessionToken: "session-token",
+                region: "us-east-1",
+              },
+              "test-encryption-key",
+            ),
+          },
+        ]),
+      );
+
+    transactionMock
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          select: vi
+            .fn()
+            .mockReturnValueOnce(selectRowsForUpdate([{ id: "scan-1", tenantId: "tenant-1" }]))
+            .mockReturnValueOnce(selectRows([])),
+          update: vi.fn().mockReturnValue(updateReturning([{ id: "scan-1", tenantId: "tenant-1" }])),
+          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+        }),
+      )
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          insert: vi
+            .fn()
+            .mockReturnValueOnce({
+              values: vi.fn().mockImplementation((values: unknown) => {
+                insertedValues.push(values);
+                return {
+                  onConflictDoNothing: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockResolvedValue([{ id: (values as { id: string }).id }]),
+                  }),
+                };
+              }),
+            })
+            .mockReturnValue({
+              values: vi.fn().mockImplementation((values: unknown) => {
+                insertedValues.push(values);
+                return {
+                  onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+                };
+              }),
+            }),
+          update: vi.fn().mockReturnValue(updateRecording([])),
+        }),
+      );
+
+    const result = await processNextScanJob({
+      workerId: "worker-1",
+      maxClaimAttempts: 1,
+      now: new Date("2026-06-29T12:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({ scanJobId: "scan-1", status: "completed" });
+
+    // Snapshot at [0], assets at [1], coverage slices at [2] — finding insert skipped (no evidence → no findings)
+    expect(insertedValues).toHaveLength(3);
+    expect(insertedValues[0]).toMatchObject({
+      scanJobId: "scan-1",
+      scanAttemptId: expect.any(String),
+      tenantId: "tenant-1",
+      assetCount: 3,
+    });
+    expect(Array.isArray(insertedValues[1])).toBe(true);
+
+    const snapshotId = (insertedValues[0] as { id: string }).id;
+    const assetRows = insertedValues[1] as Array<{ id: string; snapshotId: string }>;
+    expect(assetRows.every((row) => row.snapshotId === snapshotId)).toBe(true);
+
+    // No finding rows in any insert batch
+    const findingRows = (insertedValues as unknown[]).find(
+      (v) => Array.isArray(v) && v.length > 0 && "category" in ((v as unknown[])[0] as object),
+    );
+    expect(findingRows).toBeUndefined();
+
+    expect(JSON.stringify(assetRows)).not.toContain("AKIA1234567890ABCDEF");
+    expect(JSON.stringify(assetRows)).not.toContain("x".repeat(40));
+    expect(JSON.stringify(assetRows)).not.toContain("session-token");
+  });
+
   it("marks failed processing attempts with redacted terminal state", async () => {
     const persistedUpdates: Record<string, unknown>[] = [];
     const insertedValues: unknown[] = [];
@@ -204,6 +309,10 @@ describe("scan worker", () => {
         coverageStatus: "failed",
       }),
     ]);
+    const failedFindingRows = (insertedValues as unknown[]).find(
+      (v) => Array.isArray(v) && v.length > 0 && "category" in ((v as unknown[])[0] as object),
+    );
+    expect(failedFindingRows).toBeUndefined();
   });
 
   it("does not publish snapshot or assets when an unexpected error occurs during finalization (AC5 catch path)", async () => {
@@ -260,11 +369,15 @@ describe("scan worker", () => {
 
     expect(result).toMatchObject({ status: "failed" });
 
-    // No snapshot row and no asset rows — only coverage slices should be inserted
+    // No snapshot row, no asset rows, and no finding rows on the catch path
     const snapshotRow = (insertedValues as unknown[]).find(
       (v) => typeof v === "object" && v !== null && "assetCount" in (v as Record<string, unknown>),
     );
     expect(snapshotRow).toBeUndefined();
+    const catchFindingRows = (insertedValues as unknown[]).find(
+      (v) => Array.isArray(v) && v.length > 0 && "category" in ((v as unknown[])[0] as object),
+    );
+    expect(catchFindingRows).toBeUndefined();
   });
 
   it("redacts common provider secrets from persisted failure messages", () => {
