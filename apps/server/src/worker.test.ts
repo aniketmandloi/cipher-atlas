@@ -139,6 +139,130 @@ describe("scan worker", () => {
     expect(assetRows.every((a) => a.snapshotId === snapshotId)).toBe(true);
   });
 
+  it("publishes certificate and TLS findings with completed AWS snapshots", async () => {
+    const insertedValues: unknown[] = [];
+
+    selectMock
+      .mockReturnValueOnce(
+        selectWhereRows([
+          {
+            scanJobId: "scan-1",
+            connectorId: "connector-1",
+            tenantId: "tenant-1",
+            sourceType: "aws",
+            displayName: "AWS",
+            statusAtLaunch: "usable",
+            selectedAt: new Date("2026-06-28T12:00:00.000Z"),
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectWhereRows([
+          {
+            id: "connector-1",
+            tenantId: "tenant-1",
+            credentialCiphertext: encryptConnectorCredentials(
+              {
+                accessKeyId: "AKIA1234567890ABCDEF",
+                secretAccessKey: "x".repeat(40),
+                sessionToken: "session-token",
+                region: "us-east-1",
+              },
+              "test-encryption-key",
+            ),
+          },
+        ]),
+      );
+
+    transactionMock
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          select: vi
+            .fn()
+            .mockReturnValueOnce(selectRowsForUpdate([{ id: "scan-1", tenantId: "tenant-1" }]))
+            .mockReturnValueOnce(selectRows([])),
+          update: vi.fn().mockReturnValue(updateReturning([{ id: "scan-1", tenantId: "tenant-1" }])),
+          insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+        }),
+      )
+      .mockImplementationOnce(async (callback) =>
+        callback({
+          insert: vi
+            .fn()
+            .mockReturnValueOnce({
+              values: vi.fn().mockImplementation((values: unknown) => {
+                insertedValues.push(values);
+                return {
+                  onConflictDoNothing: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockResolvedValue([{ id: (values as { id: string }).id }]),
+                  }),
+                };
+              }),
+            })
+            .mockReturnValue({
+              values: vi.fn().mockImplementation((values: unknown) => {
+                insertedValues.push(values);
+                return {
+                  onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+                };
+              }),
+            }),
+          update: vi.fn().mockReturnValue(updateRecording([])),
+        }),
+      );
+
+    const result = await processNextScanJob({
+      workerId: "worker-1",
+      maxClaimAttempts: 1,
+      now: new Date("2026-06-29T12:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      scanJobId: "scan-1",
+      status: "completed",
+    });
+    expect(insertedValues[0]).toMatchObject({
+      scanJobId: "scan-1",
+      scanAttemptId: expect.any(String),
+      tenantId: "tenant-1",
+      assetCount: 3,
+    });
+
+    const snapshotId = (insertedValues[0] as { id: string }).id;
+    const assetRows = insertedValues[1] as Array<{ id: string; snapshotId: string }>;
+    const findingRows = insertedValues[2] as Array<{
+      snapshotId: string;
+      assetId: string;
+      category: string;
+      code: string;
+      evidence: unknown;
+    }>;
+    const assetIds = new Set(assetRows.map((row) => row.id));
+
+    expect(findingRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          snapshotId,
+          category: "certificate",
+          code: "certificate_expiring_soon",
+        }),
+        expect.objectContaining({
+          snapshotId,
+          category: "tls",
+          code: "tls_outdated_protocol",
+        }),
+        expect.objectContaining({
+          snapshotId,
+          category: "tls",
+          code: "tls_weak_cipher",
+        }),
+      ]),
+    );
+    expect(findingRows.every((row) => assetIds.has(row.assetId))).toBe(true);
+    expect(JSON.stringify(findingRows)).not.toContain("AKIA1234567890ABCDEF");
+    expect(JSON.stringify(findingRows)).not.toContain("session-token");
+  });
+
   it("marks failed processing attempts with redacted terminal state", async () => {
     const persistedUpdates: Record<string, unknown>[] = [];
     const insertedValues: unknown[] = [];

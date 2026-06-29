@@ -65,12 +65,15 @@ function collectAwsObservations(scope: ObservationCollectionScope, credentials: 
       observationKind: "aws_acm_certificate_scope",
       region: credentials.region,
       collectionBreadth: "representative_seam",
+      certificatePem: representativeCertificatePem,
     }),
     baseObservation(scope, "tls_config", `aws://elb/${credentials.region}/listeners`, {
       identifier: `${scope.connectorId}:aws-elb-tls-listeners:${credentials.region}`,
       observationKind: "aws_tls_listener_scope",
       region: credentials.region,
       collectionBreadth: "representative_seam",
+      protocolVersion: "TLSv1.0",
+      cipherSuite: "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
     }),
     baseObservation(scope, "hndl_signal", `aws://iam/${credentials.region}/crypto-signals`, {
       identifier: `${scope.connectorId}:aws-iam-hndl-signals:${credentials.region}`,
@@ -102,3 +105,23 @@ function baseObservation(
     evidence,
   };
 }
+
+const representativeCertificatePem = `-----BEGIN CERTIFICATE-----
+MIIDGTCCAgGgAwIBAgIUfENA3cWXg0pPwBZNhoiWh9J81SswDQYJKoZIhvcNAQEL
+BQAwHDEaMBgGA1UEAwwRY2lwaGVyLWF0bGFzLnRlc3QwHhcNMjYwNjI5MTQwNDIx
+WhcNMjYwNzI5MTQwNDIxWjAcMRowGAYDVQQDDBFjaXBoZXItYXRsYXMudGVzdDCC
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOLqDR0u2kLetxla5s3aq/XY
+aPI7aGIFTaY4z0OiF/hVGUPNHh98X9ZrwMzR4KJ2WyiW/JL1RsjCyLgUIc7WIhM3
+7PlfOsMXZAfdBVr+Xpho6nES1qTr5ZzPJsmgKtQuDpcsi8nQpi5LZciSXmCQW+jD
+BExsopO6mBzHuM643vCSEpUfYWewlXuXPRZ6oZqqb0iYPHMT9vBST56c+k3xGk6F
+LkFaamhzhIX8U2+duYkAEVN6Wo7M9rHv/LSIc4ylUIF5eW9mqiByB16P1ER179VP
+GLogemoBneRL6LG0GE3lnyuZIXI4clZ6bemn2IvD4ECgiPQMwas8d2w7Y/vny00C
+AwEAAaNTMFEwHQYDVR0OBBYEFN0CewywBT9NoxMkcWRSLk2Zwvj+MB8GA1UdIwQY
+MBaAFN0CewywBT9NoxMkcWRSLk2Zwvj+MA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
+hvcNAQELBQADggEBAH/h3l9+CgU4XSSRFndk5a8dwMLYFrWZ/CEQgDT9/6YI3bCJ
+rXQEl7iYhkpjZAwauPiMUMLz53qKMbXcaegvrRpct6dPHDqmupL2QDy/OLwytZVG
+i786uaUoXHaJ2y0tx0uF/s0pV9bVM2Otj9OlxxH6PaxhYsbUlFmVEDXh8aOUW8lF
+0G75IJy2uUfadsBFgkqFNOrSVjlYR7ubD/hAde172nhCfXgAicFZbMykxUZcAlyu
+cHW4Y9MvMyn8Xc6ZUm3x3uUOcMRbicDcM/UgNGAYIEvApgCy+lWyS/Uc3vGPu1nM
+gre0sypKVzNbF4VoX2tFYzdAN1IPexrbB7J2LG0=
+-----END CERTIFICATE-----`;
