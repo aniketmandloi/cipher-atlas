@@ -4,7 +4,7 @@ import { useState } from "react";
 import type Link from "next/link";
 import NextLink from "next/link";
 
-type Href = Parameters<typeof Link>[0]["href"];
+type Href = Parameters<typeof NextLink>[0]["href"];
 
 import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Button } from "@cipher-atlas/ui/components/motion";

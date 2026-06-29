@@ -8,7 +8,7 @@ import { authClient } from "@/lib/auth-client";
 import ScanDetailView from "./scan-detail-view";
 
 interface Props {
-  params: Promise<{ scanId: string }>;
+  params: Promise<{ id: string }>;
 }
 
 export default async function ScanDetailPage({ params }: Props) {
@@ -23,7 +23,7 @@ export default async function ScanDetailPage({ params }: Props) {
     redirect("/login");
   }
 
-  const { scanId } = await params;
+  const { id } = await params;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-16">
@@ -42,7 +42,7 @@ export default async function ScanDetailPage({ params }: Props) {
         </div>
         <h1 className="font-display text-4xl font-medium tracking-tight">Scan Detail</h1>
       </div>
-      <ScanDetailView scanId={scanId} />
+      <ScanDetailView scanId={id} />
     </div>
   );
 }

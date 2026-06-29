@@ -93,7 +93,7 @@ export function summarizeCoverage(slices: CoverageSliceRecord[]): CoverageSummar
     return { overall: "full", counts, total };
   }
 
-  if (counts.completed > 0) {
+  if (counts.completed > 0 || counts.partial > 0) {
     return { overall: "partial", counts, total };
   }
 

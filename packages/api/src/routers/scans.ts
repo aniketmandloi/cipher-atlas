@@ -184,18 +184,24 @@ async function hydrateScanJobs(
 
   const scanIds = rows.map((row) => row.id);
 
-  const [scopeRows, attemptRows, sliceRows] = await Promise.all([
+  const [scopeRows, attemptRows] = await Promise.all([
     db.select().from(scanJobConnector).where(inArray(scanJobConnector.scanJobId, scanIds)),
     db.select().from(scanAttempt).where(inArray(scanAttempt.scanJobId, scanIds)),
-    db
-      .select()
-      .from(coverageSlice)
-      .where(inArray(coverageSlice.scanJobId, scanIds))
-      .orderBy(coverageSlice.connectorDisplayName, coverageSlice.id),
   ]);
 
-  const scopesByScanId = groupConnectorScopes(scopeRows);
   const latestAttemptIdByScanId = groupLatestAttemptIds(attemptRows);
+  const latestAttemptIds = [...latestAttemptIdByScanId.values()];
+
+  const sliceRows =
+    latestAttemptIds.length > 0
+      ? await db
+          .select()
+          .from(coverageSlice)
+          .where(inArray(coverageSlice.scanAttemptId, latestAttemptIds))
+          .orderBy(coverageSlice.connectorDisplayName, coverageSlice.id)
+      : [];
+
+  const scopesByScanId = groupConnectorScopes(scopeRows);
   const slicesByScanId = groupCoverageSlices(sliceRows);
 
   return rows.map((row) => {
@@ -214,10 +220,7 @@ async function hydrateScanJobs(
       connectors: scopesByScanId.get(row.id) ?? [],
     } satisfies ScanJobRecord);
 
-    const latestAttemptId = latestAttemptIdByScanId.get(row.id);
-    const rawSlices = (slicesByScanId.get(row.id) ?? []).filter(
-      (slice) => !latestAttemptId || slice.scanAttemptId === latestAttemptId,
-    );
+    const rawSlices = slicesByScanId.get(row.id) ?? [];
     const redactedSlices = rawSlices.map(redactCoverageSlice);
     const summary = summarizeCoverage(rawSlices);
 

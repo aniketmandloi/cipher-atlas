@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
 import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
@@ -97,12 +99,12 @@ export default function ScanDetailView({ scanId }: Props) {
             ? "This scan could not be found."
             : "Failed to load scan."}
         </p>
-        <a
+        <Link
           href="/dashboard/scans"
           className="text-sm text-muted-foreground underline hover:text-foreground"
         >
           Back to scans
-        </a>
+        </Link>
       </div>
     );
   }
@@ -146,12 +148,12 @@ export default function ScanDetailView({ scanId }: Props) {
       )}
 
       {/* Per-connector coverage breakdown */}
-      {showCoverage && scan.coverageSlices.length > 0 && (
+      {showCoverage && (scan.coverageSlices?.length ?? 0) > 0 && (
         <ScrollReveal delay={0.04}>
           <div className="space-y-4">
             <p className="text-sm font-medium">Coverage Breakdown</p>
             <div className="space-y-3">
-              {scan.coverageSlices.map((slice) => {
+              {(scan.coverageSlices ?? []).map((slice) => {
                 const sliceStatus = slice.coverageStatus as CoverageStatus;
                 const { className: sliceCls, ...sliceProps } = coverageStatusBadgeProps(sliceStatus);
                 const actionable = sliceActionableMessage(sliceStatus, slice.detailMessage);

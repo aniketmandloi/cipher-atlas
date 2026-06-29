@@ -90,6 +90,14 @@ describe("summarizeCoverage", () => {
     expect(summarizeCoverage(slices).overall).toBe("failed");
   });
 
+  it("returns partial when all slices are partial", () => {
+    const slices = [makeSlice("a", "partial"), makeSlice("b", "partial")];
+    const result = summarizeCoverage(slices);
+    expect(result.overall).toBe("partial");
+    expect(result.counts.partial).toBe(2);
+    expect(result.counts.completed).toBe(0);
+  });
+
   it("is deterministic: same input always yields same summary", () => {
     const slices = [makeSlice("a", "completed"), makeSlice("b", "failed")];
     const r1 = summarizeCoverage(slices);
@@ -116,6 +124,11 @@ describe("deriveScanTerminalStatus", () => {
 
   it("maps empty slices to failed (guard)", () => {
     expect(deriveScanTerminalStatus([])).toBe("failed");
+  });
+
+  it("maps all-partial coverage to completed", () => {
+    const slices = [makeSlice("a", "partial"), makeSlice("b", "partial")];
+    expect(deriveScanTerminalStatus(slices)).toBe("completed");
   });
 });
 
