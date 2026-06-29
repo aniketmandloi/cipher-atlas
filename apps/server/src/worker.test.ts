@@ -228,6 +228,11 @@ describe("scan worker", () => {
       assetCount: 3,
     });
 
+    // Guard positional assumptions: snapshot at [0], assets at [1], findings at [2]
+    expect(insertedValues[0]).toMatchObject({ assetCount: expect.any(Number) });
+    expect(Array.isArray(insertedValues[1])).toBe(true);
+    expect(Array.isArray(insertedValues[2])).toBe(true);
+
     const snapshotId = (insertedValues[0] as { id: string }).id;
     const assetRows = insertedValues[1] as Array<{ id: string; snapshotId: string }>;
     const findingRows = insertedValues[2] as Array<{
@@ -239,6 +244,7 @@ describe("scan worker", () => {
     }>;
     const assetIds = new Set(assetRows.map((row) => row.id));
 
+    expect(findingRows).toHaveLength(3);
     expect(findingRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -260,6 +266,7 @@ describe("scan worker", () => {
     );
     expect(findingRows.every((row) => assetIds.has(row.assetId))).toBe(true);
     expect(JSON.stringify(findingRows)).not.toContain("AKIA1234567890ABCDEF");
+    expect(JSON.stringify(findingRows)).not.toContain("x".repeat(40));
     expect(JSON.stringify(findingRows)).not.toContain("session-token");
   });
 
@@ -328,6 +335,10 @@ describe("scan worker", () => {
         coverageStatus: "failed",
       }),
     ]);
+    const failedFindingRows = (insertedValues as unknown[]).find(
+      (v) => Array.isArray(v) && v.length > 0 && "category" in ((v as unknown[])[0] as object),
+    );
+    expect(failedFindingRows).toBeUndefined();
   });
 
   it("does not publish snapshot or assets when an unexpected error occurs during finalization (AC5 catch path)", async () => {
@@ -384,11 +395,15 @@ describe("scan worker", () => {
 
     expect(result).toMatchObject({ status: "failed" });
 
-    // No snapshot row and no asset rows — only coverage slices should be inserted
+    // No snapshot row, no asset rows, and no finding rows on the catch path
     const snapshotRow = (insertedValues as unknown[]).find(
       (v) => typeof v === "object" && v !== null && "assetCount" in (v as Record<string, unknown>),
     );
     expect(snapshotRow).toBeUndefined();
+    const catchFindingRows = (insertedValues as unknown[]).find(
+      (v) => Array.isArray(v) && v.length > 0 && "category" in ((v as unknown[])[0] as object),
+    );
+    expect(catchFindingRows).toBeUndefined();
   });
 
   it("redacts common provider secrets from persisted failure messages", () => {

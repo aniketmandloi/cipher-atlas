@@ -1,12 +1,19 @@
 import { createHash } from "node:crypto";
 
 import type { AssetRecord, CertificateLifecycle } from "../shared";
-import type { Finding, FindingCode } from "./contracts";
+import type { Finding, FindingCategory, FindingCode } from "./contracts";
 
 export const CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS = 90;
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const weakCipherMarkers = ["RC4", "3DES", "DES", "NULL", "EXPORT", "MD5", "_CBC_"] as const;
+const weakCipherMarkers = ["RC4", "3DES", "DES", "NULL", "EXPORT", "MD5"] as const;
+
+const findingCodeToCategory: Record<FindingCode, FindingCategory> = {
+  certificate_expired: "certificate",
+  certificate_expiring_soon: "certificate",
+  tls_outdated_protocol: "tls",
+  tls_weak_cipher: "tls",
+};
 
 export function deriveFindings(assets: AssetRecord[], context: { now: Date }): Finding[] {
   const findings: Finding[] = [];
@@ -20,8 +27,8 @@ export function deriveFindings(assets: AssetRecord[], context: { now: Date }): F
       if (asset.assetClass === "tls_config") {
         findings.push(...deriveTlsFindings(asset, context.now));
       }
-    } catch {
-      // Malformed individual assets should not fail publication for an otherwise completed scan.
+    } catch (err) {
+      console.warn("[scan-domain] deriveFindings: skipped malformed asset", asset.id, err);
     }
   }
 
@@ -36,7 +43,7 @@ function deriveCertificateFindings(asset: AssetRecord, now: Date): Finding[] {
     return [];
   }
 
-  if (notAfter.getTime() < now.getTime()) {
+  if (notAfter.getTime() <= now.getTime()) {
     return [
       finding(asset, {
         code: "certificate_expired",
@@ -119,7 +126,7 @@ function finding(
     tenantId: asset.tenantId,
     assetId: asset.id,
     assetClass: asset.assetClass,
-    category: input.code.startsWith("certificate_") ? "certificate" : "tls",
+    category: findingCodeToCategory[input.code],
     code: input.code,
     title: input.title,
     rationale: input.rationale,
@@ -168,13 +175,16 @@ function isOutdatedTlsProtocol(protocolVersion: string): boolean {
 
   return (
     normalized === "SSL" ||
+    normalized === "SSL3" ||
     normalized.startsWith("SSLV") ||
     normalized === "TLSV1" ||
     normalized === "TLS1" ||
     normalized === "TLSV1.0" ||
     normalized === "TLS1.0" ||
+    normalized === "1.0" ||
     normalized === "TLSV1.1" ||
-    normalized === "TLS1.1"
+    normalized === "TLS1.1" ||
+    normalized === "1.1"
   );
 }
 

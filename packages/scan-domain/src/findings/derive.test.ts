@@ -68,6 +68,7 @@ describe("deriveFindings", () => {
       { now: new Date("2026-06-29T12:00:00.000Z") },
     );
 
+    expect(findings).toHaveLength(2);
     expect(findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -111,6 +112,21 @@ describe("deriveFindings", () => {
     ];
 
     expect(JSON.stringify(deriveFindings(assets, { now }))).toBe(JSON.stringify(deriveFindings(assets, { now })));
+  });
+
+  it("finding ids are stable regardless of the clock value passed", () => {
+    const assets = [
+      asset({
+        id: "asset-tls-stable",
+        assetClass: "tls_config",
+        evidence: evidence({ metadata: { protocolVersion: "TLSv1.0" } }),
+      }),
+    ];
+
+    const ids1 = deriveFindings(assets, { now: new Date("2026-01-01T00:00:00.000Z") }).map((f) => f.id);
+    const ids2 = deriveFindings(assets, { now: new Date("2026-12-31T23:59:59.000Z") }).map((f) => f.id);
+
+    expect(ids1).toEqual(ids2);
   });
 });
 

@@ -308,7 +308,7 @@ async function finalizeScanJobWithCoverage(
               updatedAt: finishedAt,
             })),
           )
-          .onConflictDoNothing();
+          .onConflictDoNothing({ target: [finding.snapshotId, finding.assetId, finding.code] });
       }
     }
 
