@@ -123,17 +123,27 @@ export const scansRouter = router({
       });
     }
 
-    await db.insert(scanJobConnector).values(
-      connectorRows.map((row) => ({
-        scanJobId: jobId,
-        connectorId: row.id,
-        tenantId,
-        sourceType: row.sourceType,
-        displayName: row.displayName,
-        statusAtLaunch: row.status,
-        selectedAt: now,
-      })),
-    );
+    try {
+      await db.insert(scanJobConnector).values(
+        connectorRows.map((row) => ({
+          scanJobId: jobId,
+          connectorId: row.id,
+          tenantId,
+          sourceType: row.sourceType,
+          displayName: row.displayName,
+          statusAtLaunch: row.status,
+          selectedAt: now,
+        })),
+      );
+    } catch (error) {
+      await db.delete(scanJob).where(eq(scanJob.id, jobId));
+
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Scan could not be created",
+        cause: error,
+      });
+    }
 
     const [scan] = await hydrateScanJobs([created], { includeCoverageSlices: true });
 
@@ -187,6 +197,9 @@ async function hydrateScanJobs(
 
   const latestAttemptIdByScanId = groupLatestAttemptIds(attemptRows);
   const latestAttemptIds = [...latestAttemptIdByScanId.values()];
+  const scanIdByLatestAttemptId = new Map(
+    [...latestAttemptIdByScanId].map(([scanJobId, attemptId]) => [attemptId, scanJobId]),
+  );
 
   const sliceRows =
     latestAttemptIds.length > 0
@@ -196,9 +209,12 @@ async function hydrateScanJobs(
           .where(inArray(coverageSlice.scanAttemptId, latestAttemptIds))
           .orderBy(coverageSlice.connectorDisplayName, coverageSlice.id)
       : [];
+  const latestSliceRows = sliceRows.filter(
+    (row) => scanIdByLatestAttemptId.get(row.scanAttemptId) === row.scanJobId,
+  );
 
   const scopesByScanId = groupConnectorScopes(scopeRows);
-  const slicesByScanId = groupCoverageSlices(sliceRows);
+  const slicesByScanId = groupCoverageSlices(latestSliceRows);
 
   return rows.map((row) => {
     const redacted = redactScanJob({

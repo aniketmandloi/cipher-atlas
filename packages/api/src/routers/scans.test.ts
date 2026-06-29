@@ -8,11 +8,13 @@ const { insertMock, selectMock } = vi.hoisted(() => ({
 
 vi.mock("@cipher-atlas/db", () => ({
   db: {
+    delete: vi.fn(),
     insert: insertMock,
     select: selectMock,
   },
 }));
 
+import { db } from "@cipher-atlas/db";
 import { scansRouter } from "./scans";
 
 const baseDate = new Date("2026-06-29T12:00:00.000Z");
@@ -21,6 +23,7 @@ describe("scans router history contract", () => {
   beforeEach(() => {
     insertMock.mockReset();
     selectMock.mockReset();
+    vi.mocked(db.delete).mockReset();
   });
 
   it("returns tenant-scoped history rows newest first with summaries and no coverage slices", async () => {
@@ -63,7 +66,12 @@ describe("scans router history contract", () => {
       .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
       .mockReturnValueOnce(selectWhereRows([scopeRow("scan-1")]))
       .mockReturnValueOnce(selectWhereRows([attemptRow("scan-1", "attempt-1")]))
-      .mockReturnValueOnce(selectCoverageRows([coverageRow("scan-1", "attempt-1")]));
+      .mockReturnValueOnce(
+        selectCoverageRows([
+          coverageRow("scan-1", "attempt-1"),
+          coverageRow("scan-2", "attempt-1"),
+        ]),
+      );
 
     const scan = await createCaller("user-1").get({ id: "scan-1" });
 
@@ -80,12 +88,22 @@ describe("scans router history contract", () => {
   });
 
   it("returns not found for missing or cross-tenant scan ids", async () => {
-    selectMock.mockReturnValueOnce(selectLimitRows([]));
+    const limitSpy = vi.fn().mockResolvedValue([]);
+    const whereSpy = vi.fn().mockReturnValue({ limit: limitSpy });
+
+    selectMock.mockReturnValueOnce({
+      from: () => ({
+        where: whereSpy,
+      }),
+    });
 
     await expect(createCaller("user-1").get({ id: "scan-other-tenant" })).rejects.toMatchObject({
       code: "NOT_FOUND",
       message: "Scan not found",
     } satisfies Partial<TRPCError>);
+
+    expect(whereSpy).toHaveBeenCalledTimes(1);
+    expect(limitSpy).toHaveBeenCalledWith(1);
   });
 
   it("creates a separate scan job and connector snapshot for every repeated launch", async () => {
@@ -142,6 +160,31 @@ describe("scans router history contract", () => {
         statusAtLaunch: "usable",
       }),
     ]);
+  });
+
+  it("deletes the scan job when connector snapshot creation fails", async () => {
+    const deleteWhereSpy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(db.delete).mockReturnValue({
+      where: deleteWhereSpy,
+    } as never);
+
+    selectMock.mockReturnValueOnce(selectWhereRows([connectorRow()]));
+
+    insertMock
+      .mockReturnValueOnce(
+        insertReturning((values) => scanJobRow((values as { id: string }).id)),
+      )
+      .mockReturnValueOnce({
+        values: vi.fn().mockRejectedValue(new Error("snapshot insert failed")),
+      });
+
+    await expect(createCaller("user-1").create({ connectorIds: ["connector-1"] })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Scan could not be created",
+    } satisfies Partial<TRPCError>);
+
+    expect(deleteWhereSpy).toHaveBeenCalledTimes(1);
+    expect(deleteWhereSpy).toHaveBeenCalledTimes(1);
   });
 });
 
