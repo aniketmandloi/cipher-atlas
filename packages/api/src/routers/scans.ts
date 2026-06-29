@@ -38,7 +38,7 @@ export const scansRouter = router({
         .select()
         .from(scanJob)
         .where(eq(scanJob.tenantId, tenantId))
-        .orderBy(desc(scanJob.createdAt))
+        .orderBy(desc(scanJob.createdAt), desc(scanJob.id))
         .limit(input?.limit ?? 50)
         .offset(input?.offset ?? 0);
 
@@ -105,26 +105,26 @@ export const scansRouter = router({
     const jobId = randomUUID();
     const now = new Date();
 
-    const created = await db.transaction(async (tx) => {
-      const [createdJob] = await tx
-        .insert(scanJob)
-        .values({
-          id: jobId,
-          tenantId,
-          createdByUserId: ctx.session.user.id,
-          status: "queued",
-          queuedAt: now,
-        })
-        .returning();
+    const [created] = await db
+      .insert(scanJob)
+      .values({
+        id: jobId,
+        tenantId,
+        createdByUserId: ctx.session.user.id,
+        status: "queued",
+        queuedAt: now,
+      })
+      .returning();
 
-      if (!createdJob) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Scan could not be created",
-        });
-      }
+    if (!created) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Scan could not be created",
+      });
+    }
 
-      await tx.insert(scanJobConnector).values(
+    try {
+      await db.insert(scanJobConnector).values(
         connectorRows.map((row) => ({
           scanJobId: jobId,
           connectorId: row.id,
@@ -135,9 +135,15 @@ export const scansRouter = router({
           selectedAt: now,
         })),
       );
+    } catch (error) {
+      await db.delete(scanJob).where(eq(scanJob.id, jobId));
 
-      return createdJob;
-    });
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Scan could not be created",
+        cause: error,
+      });
+    }
 
     const [scan] = await hydrateScanJobs([created], { includeCoverageSlices: true });
 
@@ -191,6 +197,9 @@ async function hydrateScanJobs(
 
   const latestAttemptIdByScanId = groupLatestAttemptIds(attemptRows);
   const latestAttemptIds = [...latestAttemptIdByScanId.values()];
+  const scanIdByLatestAttemptId = new Map(
+    [...latestAttemptIdByScanId].map(([scanJobId, attemptId]) => [attemptId, scanJobId]),
+  );
 
   const sliceRows =
     latestAttemptIds.length > 0
@@ -200,9 +209,12 @@ async function hydrateScanJobs(
           .where(inArray(coverageSlice.scanAttemptId, latestAttemptIds))
           .orderBy(coverageSlice.connectorDisplayName, coverageSlice.id)
       : [];
+  const latestSliceRows = sliceRows.filter(
+    (row) => scanIdByLatestAttemptId.get(row.scanAttemptId) === row.scanJobId,
+  );
 
   const scopesByScanId = groupConnectorScopes(scopeRows);
-  const slicesByScanId = groupCoverageSlices(sliceRows);
+  const slicesByScanId = groupCoverageSlices(latestSliceRows);
 
   return rows.map((row) => {
     const redacted = redactScanJob({
