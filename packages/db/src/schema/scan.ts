@@ -1,6 +1,5 @@
 import { relations } from "drizzle-orm";
 import {
-  foreignKey,
   index,
   integer,
   pgEnum,
@@ -132,10 +131,6 @@ export const coverageSlice = pgTable(
       .notNull(),
   },
   (table) => [
-    foreignKey({
-      columns: [table.scanJobId, table.scanAttemptId],
-      foreignColumns: [scanAttempt.scanJobId, scanAttempt.id],
-    }),
     index("coverage_slice_scan_job_id_idx").on(table.scanJobId),
     index("coverage_slice_scan_attempt_id_idx").on(table.scanAttemptId),
     index("coverage_slice_tenant_id_idx").on(table.tenantId),

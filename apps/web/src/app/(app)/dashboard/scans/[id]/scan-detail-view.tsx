@@ -92,12 +92,11 @@ export default function ScanDetailView({ scanId }: Props) {
   }
 
   if (scanQuery.isError) {
+    const isNotFound = scanQuery.error.data?.code === "NOT_FOUND";
     return (
       <div className="flex items-center gap-3">
         <p className="text-sm text-destructive">
-          {scanQuery.error.message === "Scan not found"
-            ? "This scan could not be found."
-            : "Failed to load scan."}
+          {isNotFound ? "This scan could not be found." : "Failed to load scan."}
         </p>
         <Link
           href="/dashboard/scans"
