@@ -7,16 +7,19 @@ export const CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS = 90;
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const weakCipherMarkers = ["RC4", "3DES", "DES", "NULL", "EXPORT", "MD5"] as const;
-const vulnerablePackageMarkers = [
+const cryptographyRelevantPackages = new Set([
   "openssl",
   "libgcrypt",
-  "bcprov",
+  "libgcrypt20",
+  "bcprov-jdk15on",
   "bouncycastle",
   "pycrypto",
+  "pycryptodome",
   "cryptography",
-  "rsa",
-  "ecdsa",
-] as const;
+  "libsodium",
+  "sodium-native",
+  "node-forge",
+]);
 const hndlHeuristicMarkers = [
   "long_term_confidentiality",
   "archive_encryption",
@@ -195,17 +198,28 @@ function hasVulnerablePackageExposure(
   packageVersion: string | null,
   vulnerabilityId: string | null,
 ): boolean {
+  if (!packageName || !isCryptographyRelevantPackage(packageName)) {
+    return false;
+  }
+
   if (vulnerabilityId) {
     return true;
   }
 
-  if (!packageName || !packageVersion) {
-    return false;
-  }
+  return packageVersion !== null;
+}
 
-  const normalized = packageName.toLowerCase();
+function isCryptographyRelevantPackage(packageName: string): boolean {
+  const normalized = normalizePackageName(packageName);
 
-  return vulnerablePackageMarkers.some((marker) => normalized.includes(marker));
+  return cryptographyRelevantPackages.has(normalized);
+}
+
+function normalizePackageName(packageName: string): string {
+  const lower = packageName.toLowerCase().trim();
+  const segments = lower.split("/");
+
+  return segments[segments.length - 1] ?? lower;
 }
 
 function findMatchedHndlHeuristic(metadata: Record<string, unknown>): string | null {

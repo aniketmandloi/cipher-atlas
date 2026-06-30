@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeObservations } from "../inventory/normalize";
 import { deriveFindings } from "./derive";
-import type { AssetRecord, EvidenceEnvelope } from "../shared";
+import type { AssetRecord, EvidenceEnvelope, Observation } from "../shared";
+
+const SECRET_FIXTURE = "ghp_1234567890abcdefghijklmnop";
 
 describe("deriveFindings", () => {
   it("derives certificate findings with stable evidence and rationale", () => {
@@ -48,7 +51,7 @@ describe("deriveFindings", () => {
       ]),
     );
     expect(findings[0]?.rationale).toContain("asset asset-cert-");
-    expect(JSON.stringify(findings)).not.toContain("ghp_1234567890abcdefghijklmnop");
+    expect(JSON.stringify(findings)).not.toContain(SECRET_FIXTURE);
   });
 
   it("derives TLS findings from outdated protocol and weak cipher posture", () => {
@@ -104,31 +107,23 @@ describe("deriveFindings", () => {
 
   it("derives dependency findings for launch-relevant vulnerable package markers", () => {
     const now = new Date("2026-06-29T12:00:00.000Z");
-    const findings = deriveFindings(
-      [
-        asset({
-          id: "asset-dep-vuln",
-          assetClass: "dependency",
-          sourceType: "github",
-          sourceRef: "github:connector-repo",
-          evidence: evidence({
-            sourceRef: "github:connector-repo",
-            locator: "github://dependency-manifests",
-            metadata: {
-              packageName: "openssl",
-              packageVersion: "1.1.1k",
-              manifestSource: "package-lock.json",
-            },
-          }),
-        }),
-      ],
-      { now },
-    );
+    const [normalizedAsset] = normalizeObservations([
+      dependencyObservation({
+        sourceRef: "github:connector-repo",
+        evidence: {
+          packageName: "openssl",
+          packageVersion: "1.1.1k",
+          manifestSource: "package-lock.json",
+          token: SECRET_FIXTURE,
+        },
+      }),
+    ]);
+    const findings = deriveFindings([normalizedAsset!], { now });
 
     expect(findings).toHaveLength(1);
     expect(findings[0]).toEqual(
       expect.objectContaining({
-        assetId: "asset-dep-vuln",
+        assetId: normalizedAsset?.id,
         category: "dependency",
         code: "dependency_vulnerable_package",
         title: "Vulnerable cryptography-relevant package",
@@ -139,7 +134,7 @@ describe("deriveFindings", () => {
     expect(findings[0]?.rationale).toContain("openssl@1.1.1k");
     expect(findings[0]?.rationale).toContain("manifest package-lock.json");
     expect(findings[0]?.rationale).toContain("repository github:connector-repo");
-    expect(JSON.stringify(findings)).not.toContain("ghp_1234567890abcdefghijklmnop");
+    expect(JSON.stringify(findings)).not.toContain(SECRET_FIXTURE);
   });
 
   it("skips dependency assets with package markers but no version or advisory", () => {
@@ -216,7 +211,7 @@ describe("deriveFindings", () => {
     expect(findings[0]?.rationale).toContain("archive encryption");
   });
 
-  it("derives dependency findings from explicit vulnerability identifiers", () => {
+  it("derives dependency findings from explicit vulnerability identifiers on crypto packages", () => {
     const findings = deriveFindings(
       [
         asset({
@@ -224,6 +219,7 @@ describe("deriveFindings", () => {
           assetClass: "dependency",
           evidence: evidence({
             metadata: {
+              packageName: "cryptography",
               vulnerabilityId: "CVE-2024-1234",
               manifestSource: "requirements.txt",
             },
@@ -237,6 +233,47 @@ describe("deriveFindings", () => {
     expect(findings[0]?.code).toBe("dependency_vulnerable_package");
     expect(findings[0]?.rationale).toContain("CVE-2024-1234");
     expect(findings[0]?.rationale).toContain("manifest requirements.txt");
+  });
+
+  it("skips dependency findings for unrelated packages even with advisory metadata", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-dep-unrelated",
+          assetClass: "dependency",
+          evidence: evidence({
+            metadata: {
+              packageName: "lodash",
+              packageVersion: "4.17.21",
+              vulnerabilityId: "CVE-2024-1234",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it("skips dependency findings for substring crypto false positives", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-dep-false-positive",
+          assetClass: "dependency",
+          evidence: evidence({
+            metadata: {
+              packageName: "my-rsa-utils",
+              packageVersion: "1.0.0",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toEqual([]);
   });
 
   it("returns byte-identical output for the same assets and clock", () => {
@@ -324,5 +361,28 @@ function certificate(overrides: Partial<EvidenceEnvelope["certificate"]> = {}): 
     notAfter: new Date("2026-07-01T00:00:00.000Z"),
     fingerprint: "AA:BB:CC",
     ...overrides,
+  };
+}
+
+function dependencyObservation(overrides: Partial<Observation> = {}): Observation {
+  const { evidence: evidenceOverrides, ...restOverrides } = overrides;
+
+  return {
+    tenantId: "tenant-1",
+    snapshotId: "snapshot-1",
+    scanJobId: "scan-1",
+    scanAttemptId: "attempt-1",
+    connectorId: "connector-1",
+    connectorDisplayName: "GitHub",
+    sourceType: "github",
+    sourceRef: "github:connector-repo",
+    assetClass: "dependency",
+    locator: "github://dependency-manifests",
+    capturedAt: new Date("2026-06-29T12:00:00.000Z"),
+    evidence: {
+      identifier: "connector-1:dependency",
+      ...evidenceOverrides,
+    },
+    ...restOverrides,
   };
 }
