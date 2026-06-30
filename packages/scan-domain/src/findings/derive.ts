@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 
 import type { AssetRecord, CertificateLifecycle } from "../shared";
 import type { Finding, FindingCategory, FindingCode } from "./contracts";
+import { applyNistMapping } from "./nist-mapping";
 import { applyPrioritization, sortFindingsByPriority } from "./prioritize";
 
-type DerivedFindingDraft = Omit<Finding, "riskLevel" | "replacementPriority">;
+type DerivedFindingDraft = Omit<Finding, "riskLevel" | "replacementPriority" | "nistMapping">;
 
 export const CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS = 90;
 
@@ -65,7 +66,9 @@ export function deriveFindings(assets: AssetRecord[], context: { now: Date }): F
     }
   }
 
-  return sortFindingsByPriority(findings.map((record) => applyPrioritization(record)));
+  return sortFindingsByPriority(
+    findings.map((record) => applyNistMapping(applyPrioritization(record))),
+  );
 }
 
 function deriveCertificateFindings(asset: AssetRecord, now: Date): DerivedFindingDraft[] {

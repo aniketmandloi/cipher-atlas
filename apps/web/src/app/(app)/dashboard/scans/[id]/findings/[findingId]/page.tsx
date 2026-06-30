@@ -18,7 +18,7 @@ interface Props {
 function buildBrowseFiltersQuery(
   searchParams: Record<string, string | string[] | undefined>,
 ): string {
-  const allowedKeys = ["category", "source", "assetClass", "riskLevel"] as const;
+  const allowedKeys = ["category", "source", "assetClass", "riskLevel", "standards"] as const;
   const params = new URLSearchParams();
 
   for (const key of allowedKeys) {

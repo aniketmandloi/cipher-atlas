@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { trpc } from "@/utils/trpc";
 import { formatDate, type CoverageOverall } from "../scans-utils";
-import { assetClassLabel, categoryLabel, replacementPriorityLabel, riskLevelBadgeVariant, riskLevelLabel } from "./findings-labels";
+import { assetClassLabel, categoryLabel, nistMappingTypeBadgeVariant, nistMappingTypeLabel, replacementPriorityLabel, riskLevelBadgeVariant, riskLevelLabel } from "./findings-labels";
 
 interface Props {
   scanId: string;
@@ -28,6 +28,7 @@ type CategoryFilter = "all" | FindingCategory;
 type RiskLevelFilter = "all" | RiskLevel;
 type SourceFilter = "all" | "github" | "aws";
 type AssetClassFilter = "all" | "certificate" | "tls_config" | "dependency" | "hndl_signal";
+type StandardsFilter = "all" | "with" | "without";
 
 const RISK_LEVEL_CARDS: Array<{
   key: RiskLevel;
@@ -55,12 +56,14 @@ function buildFilterQueryString(filters: {
   riskLevel: RiskLevelFilter;
   source: SourceFilter;
   assetClass: AssetClassFilter;
+  standards: StandardsFilter;
 }): string {
   const params = new URLSearchParams();
   if (filters.category !== "all") params.set("category", filters.category);
   if (filters.riskLevel !== "all") params.set("riskLevel", filters.riskLevel);
   if (filters.source !== "all") params.set("source", filters.source);
   if (filters.assetClass !== "all") params.set("assetClass", filters.assetClass);
+  if (filters.standards !== "all") params.set("standards", filters.standards);
   return params.toString();
 }
 
@@ -69,11 +72,13 @@ function readBrowseFilters(searchParams: Pick<URLSearchParams, "get">): {
   riskLevel: RiskLevelFilter;
   source: SourceFilter;
   assetClass: AssetClassFilter;
+  standards: StandardsFilter;
 } {
   const category = searchParams.get("category");
   const riskLevel = searchParams.get("riskLevel");
   const source = searchParams.get("source");
   const assetClass = searchParams.get("assetClass");
+  const standards = searchParams.get("standards");
 
   return {
     category:
@@ -98,6 +103,7 @@ function readBrowseFilters(searchParams: Pick<URLSearchParams, "get">): {
       assetClass === "hndl_signal"
         ? assetClass
         : "all",
+    standards: standards === "with" || standards === "without" ? standards : "all",
   };
 }
 
@@ -130,6 +136,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
   const [riskLevelFilter, setRiskLevelFilter] = useState<RiskLevelFilter>(urlFilters.riskLevel);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(urlFilters.source);
   const [assetClassFilter, setAssetClassFilter] = useState<AssetClassFilter>(urlFilters.assetClass);
+  const [standardsFilter, setStandardsFilter] = useState<StandardsFilter>(urlFilters.standards);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -138,6 +145,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
     setRiskLevelFilter(nextFilters.riskLevel);
     setSourceFilter(nextFilters.source);
     setAssetClassFilter(nextFilters.assetClass);
+    setStandardsFilter(nextFilters.standards);
   }, [searchParams]);
 
   const filterQueryString = useMemo(
@@ -147,8 +155,9 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
         riskLevel: riskLevelFilter,
         source: sourceFilter,
         assetClass: assetClassFilter,
+        standards: standardsFilter,
       }),
-    [categoryFilter, riskLevelFilter, sourceFilter, assetClassFilter],
+    [categoryFilter, riskLevelFilter, sourceFilter, assetClassFilter, standardsFilter],
   );
 
   const queryInput = useMemo(
@@ -158,10 +167,15 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
       ...(riskLevelFilter !== "all" ? { riskLevel: riskLevelFilter } : {}),
       ...(sourceFilter !== "all" ? { sourceType: sourceFilter } : {}),
       ...(assetClassFilter !== "all" ? { assetClass: assetClassFilter } : {}),
+      ...(standardsFilter === "with"
+        ? { standardsRelevant: true }
+        : standardsFilter === "without"
+          ? { standardsRelevant: false }
+          : {}),
       limit: 100,
       offset: 0,
     }),
-    [scanId, categoryFilter, riskLevelFilter, sourceFilter, assetClassFilter],
+    [scanId, categoryFilter, riskLevelFilter, sourceFilter, assetClassFilter, standardsFilter],
   );
 
   const findingsQuery = useQuery({
@@ -362,6 +376,43 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
               ))}
             </div>
           )}
+
+          {totalFindings > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Standards relevance
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <FilterButton
+                  active={standardsFilter === "all"}
+                  onClick={() => {
+                    setStandardsFilter("all");
+                    setSelectedFindingId(null);
+                  }}
+                >
+                  All findings
+                </FilterButton>
+                <FilterButton
+                  active={standardsFilter === "with"}
+                  onClick={() => {
+                    setStandardsFilter("with");
+                    setSelectedFindingId(null);
+                  }}
+                >
+                  With NIST mapping ({facetCounts?.standardsRelevantCount ?? 0})
+                </FilterButton>
+                <FilterButton
+                  active={standardsFilter === "without"}
+                  onClick={() => {
+                    setStandardsFilter("without");
+                    setSelectedFindingId(null);
+                  }}
+                >
+                  No NIST mapping ({totalFindings - (facetCounts?.standardsRelevantCount ?? 0)})
+                </FilterButton>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
@@ -419,6 +470,12 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                               {riskLevelLabel(item.riskLevel)}
                             </Badge>
                             <Badge variant="outline">{replacementPriorityLabel(item.replacementPriority)}</Badge>
+                            {item.nistMapping && (
+                              <Badge variant={nistMappingTypeBadgeVariant(item.nistMapping.mappingType)}>
+                                {item.nistMapping.references[0]?.id ?? "NIST"} ·{" "}
+                                {item.nistMapping.mappingType === "direct" ? "Direct" : "Interpretation"}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                         <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">
@@ -508,6 +565,20 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                           {replacementPriorityLabel(selectedFinding.replacementPriority)}
                         </p>
                       </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">NIST guidance</p>
+                      {selectedFinding.nistMapping ? (
+                        <div className="mt-1 space-y-1">
+                          <Badge variant={nistMappingTypeBadgeVariant(selectedFinding.nistMapping.mappingType)}>
+                            {nistMappingTypeLabel(selectedFinding.nistMapping.mappingType)}
+                          </Badge>
+                          <p>{selectedFinding.nistMapping.references[0]?.id}</p>
+                          <p className="text-muted-foreground">{selectedFinding.nistMapping.summary}</p>
+                        </div>
+                      ) : (
+                        <p className="mt-0.5 text-muted-foreground">No NIST mapping for this finding</p>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>

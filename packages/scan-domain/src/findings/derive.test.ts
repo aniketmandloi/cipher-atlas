@@ -311,6 +311,32 @@ describe("deriveFindings", () => {
       ["high", "P2"],
       ["high", "P2"],
     ]);
+    expect(first.every((item) => item.nistMapping !== null)).toBe(true);
+    expect(first.map((item) => item.nistMapping?.mappingType)).toEqual(["interpretation", "direct"]);
+  });
+
+  it("finding ids and ordering remain unchanged after adding nistMapping", () => {
+    const now = new Date("2026-06-29T12:00:00.000Z");
+    const assets = [
+      asset({
+        id: "asset-tls-1",
+        assetClass: "tls_config",
+        evidence: evidence({ metadata: { protocolVersion: "TLSv1.1" } }),
+      }),
+      asset({
+        id: "asset-dep-1",
+        assetClass: "dependency",
+        evidence: evidence({ metadata: { packageName: "openssl", packageVersion: "3.0.0" } }),
+      }),
+    ];
+
+    const findings = deriveFindings(assets, { now });
+
+    expect(findings.map((item) => item.code)).toEqual(["dependency_vulnerable_package", "tls_outdated_protocol"]);
+    for (const item of findings) {
+      expect(item.id).toMatch(/^finding_[a-f0-9]{32}$/);
+      expect(item.id).not.toMatch(/direct|interpretation|NIST/);
+    }
   });
 
   it("finding ids are stable regardless of the clock value passed and exclude risk/priority", () => {

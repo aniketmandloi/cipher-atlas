@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { findingCodes, replacementPriorities, riskLevels } from "./contracts";
+import { applyNistMapping } from "./nist-mapping";
 import {
   applyPrioritization,
   compareFindingsByPriority,
@@ -9,6 +10,8 @@ import {
   riskLevelRankValue,
 } from "./prioritize";
 import type { Finding } from "./contracts";
+
+type PrioritizationDraft = Omit<Finding, "riskLevel" | "replacementPriority" | "nistMapping">;
 
 describe("prioritizeFinding", () => {
   it.each([
@@ -53,7 +56,7 @@ describe("compareFindingsByPriority", () => {
       findingFixture({ id: "finding_b", code: "tls_weak_cipher", category: "tls" }),
       findingFixture({ id: "finding_a", code: "hndl_exposure", category: "hndl" }),
       findingFixture({ id: "finding_c", code: "certificate_expired", category: "certificate" }),
-    ].map((item) => applyPrioritization(item));
+    ].map((item) => applyNistMapping(applyPrioritization(item)));
 
     const sorted = [...findings].sort(compareFindingsByPriority);
 
@@ -81,9 +84,8 @@ describe("applyPrioritization", () => {
 });
 
 function findingFixture(
-  overrides: Partial<Omit<Finding, "riskLevel" | "replacementPriority">> &
-    Pick<Finding, "id" | "code" | "category">,
-): Omit<Finding, "riskLevel" | "replacementPriority"> {
+  overrides: Partial<PrioritizationDraft> & Pick<Finding, "id" | "code" | "category">,
+): PrioritizationDraft {
   return {
     snapshotId: "snapshot-1",
     scanJobId: "scan-1",

@@ -70,6 +70,7 @@ describe("findings router browse contract", () => {
       medium: 1,
       low: 0,
     });
+    expect(result.facetCounts.standardsRelevantCount).toBe(2);
     expect(result.facetCounts.sourceCounts).toEqual([{ sourceType: "github", count: 2 }]);
     expect(result.facetCounts.assetClassCounts).toEqual([
       { assetClass: "certificate", count: 1 },
@@ -95,6 +96,7 @@ describe("findings router browse contract", () => {
         rationale: "Certificate expired yesterday.",
         riskLevel: "high",
         replacementPriority: "P1",
+        nistMapping: sampleNistMapping("certificate_expired"),
         evidence: expect.objectContaining({
           locator: "s3://evidence/cert",
           redacted: true,
@@ -113,6 +115,7 @@ describe("findings router browse contract", () => {
         rationale: "TLS endpoint negotiates a weak cipher suite.",
         riskLevel: "medium",
         replacementPriority: "P3",
+        nistMapping: sampleNistMapping("tls_weak_cipher"),
         evidence: expect.objectContaining({
           locator: "s3://evidence/tls",
         }),
@@ -180,6 +183,42 @@ describe("findings router browse contract", () => {
     expect(result.items[0]?.riskLevel).toBe("high");
   });
 
+  it("applies standardsRelevant filter while keeping full snapshot facet counts", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
+      .mockReturnValueOnce(selectLimitRows([snapshotRow("scan-1", "snapshot-1")]))
+      .mockReturnValueOnce(selectWhereRows(facetRows()))
+      .mockReturnValueOnce(selectWhereRows([{ total: 2 }]))
+      .mockReturnValueOnce(selectListRows(listRows()));
+
+    const withMapping = await createCaller("user-1").list({
+      scanId: "scan-1",
+      standardsRelevant: true,
+    });
+
+    expect(withMapping.filters).toEqual({ standardsRelevant: true });
+    expect(withMapping.facetCounts.standardsRelevantCount).toBe(2);
+    expect(withMapping.items).toHaveLength(2);
+    expect(withMapping.items.every((item) => item.nistMapping !== null)).toBe(true);
+
+    selectMock.mockReset();
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
+      .mockReturnValueOnce(selectLimitRows([snapshotRow("scan-1", "snapshot-1")]))
+      .mockReturnValueOnce(selectWhereRows(facetRows()))
+      .mockReturnValueOnce(selectWhereRows([{ total: 0 }]))
+      .mockReturnValueOnce(selectListRows([]));
+
+    const withoutMapping = await createCaller("user-1").list({
+      scanId: "scan-1",
+      standardsRelevant: false,
+    });
+
+    expect(withoutMapping.filters).toEqual({ standardsRelevant: false });
+    expect(withoutMapping.facetCounts.standardsRelevantCount).toBe(2);
+    expect(withoutMapping.items).toEqual([]);
+  });
+
   it("returns empty rows and zero facet counts for completed scans without findings", async () => {
     selectMock
       .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
@@ -202,6 +241,7 @@ describe("findings router browse contract", () => {
       medium: 0,
       low: 0,
     });
+    expect(result.facetCounts.standardsRelevantCount).toBe(0);
     expect(result.items).toEqual([]);
     expect(result.page).toMatchObject({
       returned: 0,
@@ -229,6 +269,7 @@ describe("findings router browse contract", () => {
       medium: 0,
       low: 0,
     });
+    expect(result.facetCounts.standardsRelevantCount).toBe(0);
     expect(result.items).toEqual([]);
     expect(selectMock).toHaveBeenCalledTimes(2);
   });
@@ -326,6 +367,7 @@ describe("findings router get contract", () => {
         rationale: "Certificate expired yesterday.",
         riskLevel: "high",
         replacementPriority: "P1",
+        nistMapping: sampleNistMapping("certificate_expired"),
         evidence: expect.objectContaining({
           locator: "s3://evidence/cert",
           redacted: true,
@@ -410,9 +452,49 @@ function snapshotRow(scanJobId: string, id: string) {
 
 function facetRows() {
   return [
-    { category: "certificate", sourceType: "github", assetClass: "certificate", riskLevel: "high" },
-    { category: "tls", sourceType: "github", assetClass: "tls_config", riskLevel: "medium" },
+    {
+      category: "certificate",
+      sourceType: "github",
+      assetClass: "certificate",
+      riskLevel: "high",
+      nistMapping: sampleNistMapping("certificate_expired"),
+    },
+    {
+      category: "tls",
+      sourceType: "github",
+      assetClass: "tls_config",
+      riskLevel: "medium",
+      nistMapping: sampleNistMapping("tls_weak_cipher"),
+    },
   ];
+}
+
+function sampleNistMapping(code: "certificate_expired" | "tls_weak_cipher") {
+  if (code === "certificate_expired") {
+    return {
+      mappingType: "direct" as const,
+      references: [
+        {
+          id: "NIST SP 1800-16",
+          title: "Securing Web Transactions: TLS Server Certificate Management",
+        },
+      ],
+      summary:
+        "Expired certificate lifecycle management is directly addressed by TLS certificate management guidance; replace and re-issue.",
+    };
+  }
+
+  return {
+    mappingType: "direct" as const,
+    references: [
+      {
+        id: "NIST SP 800-52 Rev. 2",
+        title: "Guidelines for the Selection, Configuration, and Use of TLS Implementations",
+      },
+    ],
+    summary:
+      "Weak cipher suites are outside the NIST-approved configuration set; reconfigure to approved cipher suites.",
+  };
 }
 
 function listRows() {
@@ -439,6 +521,7 @@ function listRows() {
       detectedAt: baseDate,
       riskLevel: "high",
       replacementPriority: "P1",
+      nistMapping: sampleNistMapping("certificate_expired"),
       assetIdentifier: "CN=example.com",
       connectorDisplayName: "GitHub snapshot",
     },
@@ -464,6 +547,7 @@ function listRows() {
       detectedAt: baseDate,
       riskLevel: "medium",
       replacementPriority: "P3",
+      nistMapping: sampleNistMapping("tls_weak_cipher"),
       assetIdentifier: "api.example.com:443",
       connectorDisplayName: "GitHub snapshot",
     },
