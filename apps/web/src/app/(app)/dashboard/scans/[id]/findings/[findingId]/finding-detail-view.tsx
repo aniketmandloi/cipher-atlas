@@ -11,7 +11,7 @@ import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useQuery } from "@tanstack/react-query";
 
 import { trpc } from "@/utils/trpc";
-import { categoryLabel, assetClassLabel } from "../../findings-labels";
+import { categoryLabel, assetClassLabel, replacementPriorityLabel, riskLevelBadgeVariant, riskLevelLabel } from "../../findings-labels";
 import { formatDate } from "../../../scans-utils";
 
 interface Props {
@@ -58,12 +58,20 @@ export default function FindingDetailView({ scanId, findingId, browseFiltersQuer
       <ScrollReveal delay={0}>
         <Card>
           <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
                 <CardTitle className="font-display text-xl font-medium">{finding.title}</CardTitle>
                 <p className="text-sm text-muted-foreground">
                   {categoryLabel(finding.category)} · {finding.code}
                 </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Badge variant={riskLevelBadgeVariant(finding.riskLevel)}>
+                    {riskLevelLabel(finding.riskLevel)}
+                  </Badge>
+                  <Badge variant="outline">
+                    {replacementPriorityLabel(finding.replacementPriority)}
+                  </Badge>
+                </div>
               </div>
               <Badge variant="outline">{categoryLabel(finding.category)}</Badge>
             </div>
@@ -181,10 +189,6 @@ export default function FindingDetailView({ scanId, findingId, browseFiltersQuer
               </div>
             </div>
 
-            <div className="border-t pt-4">
-              <p className="text-xs text-muted-foreground">Priority</p>
-              <p className="mt-0.5">Not prioritized yet</p>
-            </div>
           </CardContent>
         </Card>
       </ScrollReveal>

@@ -18,6 +18,14 @@ export const findingCodes = [
 
 export const findingCodeSchema = z.enum(findingCodes);
 
+export const riskLevels = ["critical", "high", "medium", "low"] as const;
+
+export const riskLevelSchema = z.enum(riskLevels);
+
+export const replacementPriorities = ["P1", "P2", "P3", "P4"] as const;
+
+export const replacementPrioritySchema = z.enum(replacementPriorities);
+
 const findingCodeCategoryMap: Record<(typeof findingCodes)[number], (typeof findingCategories)[number]> = {
   certificate_expired: "certificate",
   certificate_expiring_soon: "certificate",
@@ -44,6 +52,8 @@ export const findingSchema = z
     sourceRef: z.string().min(1),
     evidence: evidenceEnvelopeSchema,
     detectedAt: z.date(),
+    riskLevel: riskLevelSchema,
+    replacementPriority: replacementPrioritySchema.nullable(),
   })
   .superRefine((val, ctx) => {
     if (findingCodeCategoryMap[val.code] !== val.category) {
@@ -57,4 +67,6 @@ export const findingSchema = z
 
 export type FindingCategory = z.infer<typeof findingCategorySchema>;
 export type FindingCode = z.infer<typeof findingCodeSchema>;
+export type RiskLevel = z.infer<typeof riskLevelSchema>;
+export type ReplacementPriority = z.infer<typeof replacementPrioritySchema>;
 export type Finding = z.infer<typeof findingSchema>;

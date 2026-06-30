@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 
 import type { AssetRecord, CertificateLifecycle } from "../shared";
 import type { Finding, FindingCategory, FindingCode } from "./contracts";
+import { applyPrioritization, sortFindingsByPriority } from "./prioritize";
+
+type DerivedFindingDraft = Omit<Finding, "riskLevel" | "replacementPriority">;
 
 export const CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS = 90;
 
@@ -38,7 +41,7 @@ const findingCodeToCategory: Record<FindingCode, FindingCategory> = {
 };
 
 export function deriveFindings(assets: AssetRecord[], context: { now: Date }): Finding[] {
-  const findings: Finding[] = [];
+  const findings: DerivedFindingDraft[] = [];
 
   for (const asset of assets) {
     try {
@@ -62,10 +65,10 @@ export function deriveFindings(assets: AssetRecord[], context: { now: Date }): F
     }
   }
 
-  return findings.sort((left, right) => left.id.localeCompare(right.id));
+  return sortFindingsByPriority(findings.map((record) => applyPrioritization(record)));
 }
 
-function deriveCertificateFindings(asset: AssetRecord, now: Date): Finding[] {
+function deriveCertificateFindings(asset: AssetRecord, now: Date): DerivedFindingDraft[] {
   const certificate = asset.evidence.certificate;
   const notAfter = coerceDate(certificate?.notAfter);
 
@@ -109,10 +112,10 @@ function deriveCertificateFindings(asset: AssetRecord, now: Date): Finding[] {
   return [];
 }
 
-function deriveTlsFindings(asset: AssetRecord, now: Date): Finding[] {
+function deriveTlsFindings(asset: AssetRecord, now: Date): DerivedFindingDraft[] {
   const protocolVersion = firstString(asset.evidence.metadata, ["protocolVersion", "tlsVersion", "protocol"]);
   const cipherSuite = firstString(asset.evidence.metadata, ["cipherSuite", "cipher"]);
-  const findings: Finding[] = [];
+  const findings: DerivedFindingDraft[] = [];
 
   if (protocolVersion && isOutdatedTlsProtocol(protocolVersion)) {
     findings.push(
@@ -139,7 +142,7 @@ function deriveTlsFindings(asset: AssetRecord, now: Date): Finding[] {
   return findings;
 }
 
-function deriveDependencyFindings(asset: AssetRecord, now: Date): Finding[] {
+function deriveDependencyFindings(asset: AssetRecord, now: Date): DerivedFindingDraft[] {
   const metadata = asset.evidence.metadata;
   const packageName = firstString(metadata, ["packageName", "package", "name"]);
   const packageVersion = firstString(metadata, ["packageVersion", "version"]);
@@ -172,7 +175,7 @@ function deriveDependencyFindings(asset: AssetRecord, now: Date): Finding[] {
   ];
 }
 
-function deriveHndlFindings(asset: AssetRecord, now: Date): Finding[] {
+function deriveHndlFindings(asset: AssetRecord, now: Date): DerivedFindingDraft[] {
   const metadata = asset.evidence.metadata;
   const matchedHeuristic = findMatchedHndlHeuristic(metadata);
 
@@ -270,7 +273,7 @@ function finding(
     rationale: string;
     detectedAt: Date;
   },
-): Finding {
+): DerivedFindingDraft {
   return {
     id: stableFindingId(asset.snapshotId, asset.id, input.code),
     snapshotId: asset.snapshotId,

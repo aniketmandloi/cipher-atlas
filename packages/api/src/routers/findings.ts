@@ -6,12 +6,15 @@ import {
   assetClassSchema,
   connectorSourceTypeSchema,
   findingCategorySchema,
+  riskLevelSchema,
   type AssetClass,
   type FindingCategory,
   type FindingCode,
+  type ReplacementPriority,
+  type RiskLevel,
 } from "@cipher-atlas/scan-domain";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, eq, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
@@ -22,6 +25,7 @@ const listFindingsInputSchema = z.object({
   category: findingCategorySchema.optional(),
   sourceType: connectorSourceTypeSchema.optional(),
   assetClass: assetClassSchema.optional(),
+  riskLevel: riskLevelSchema.optional(),
   limit: z.number().int().min(1).max(100).default(50),
   offset: z.number().int().min(0).default(0),
 });
@@ -74,6 +78,15 @@ function emptyCategoryCounts(): Record<FindingCategory, number> {
   };
 }
 
+function emptyRiskLevelCounts(): Record<RiskLevel, number> {
+  return {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+  };
+}
+
 function projectEvidence(evidence: InventoryEvidenceEnvelope): ProjectedFindingEvidence {
   const projected: ProjectedFindingEvidence = {
     sourceRef: evidence.sourceRef,
@@ -90,19 +103,29 @@ function projectEvidence(evidence: InventoryEvidenceEnvelope): ProjectedFindingE
   return projected;
 }
 
-function buildFacetCounts(rows: Array<{ category: FindingCategory; sourceType: ConnectorSourceType; assetClass: AssetClass }>) {
+function buildFacetCounts(
+  rows: Array<{
+    category: FindingCategory;
+    sourceType: ConnectorSourceType;
+    assetClass: AssetClass;
+    riskLevel: RiskLevel;
+  }>,
+) {
   const categoryCounts = emptyCategoryCounts();
+  const riskLevelCounts = emptyRiskLevelCounts();
   const sourceCountMap = new Map<ConnectorSourceType, number>();
   const assetClassCountMap = new Map<AssetClass, number>();
 
   for (const row of rows) {
     categoryCounts[row.category] += 1;
+    riskLevelCounts[row.riskLevel] += 1;
     sourceCountMap.set(row.sourceType, (sourceCountMap.get(row.sourceType) ?? 0) + 1);
     assetClassCountMap.set(row.assetClass, (assetClassCountMap.get(row.assetClass) ?? 0) + 1);
   }
 
   return {
     categoryCounts,
+    riskLevelCounts,
     sourceCounts: [...sourceCountMap.entries()].map(([sourceType, facetCount]) => ({
       sourceType,
       count: facetCount,
@@ -121,6 +144,7 @@ function buildFilterConditions(
     category?: FindingCategory;
     sourceType?: ConnectorSourceType;
     assetClass?: AssetClass;
+    riskLevel?: RiskLevel;
   },
 ): SQL[] {
   const conditions: SQL[] = [eq(finding.snapshotId, snapshotId), eq(finding.tenantId, tenantId)];
@@ -134,9 +158,28 @@ function buildFilterConditions(
   if (filters.assetClass) {
     conditions.push(eq(finding.assetClass, filters.assetClass));
   }
+  if (filters.riskLevel) {
+    conditions.push(eq(finding.riskLevel, filters.riskLevel));
+  }
 
   return conditions;
 }
+
+const riskLevelOrder = sql`CASE ${finding.riskLevel}
+  WHEN 'critical' THEN 1
+  WHEN 'high' THEN 2
+  WHEN 'medium' THEN 3
+  WHEN 'low' THEN 4
+  ELSE 5
+END`;
+
+const replacementPriorityOrder = sql`CASE ${finding.replacementPriority}
+  WHEN 'P1' THEN 1
+  WHEN 'P2' THEN 2
+  WHEN 'P3' THEN 3
+  WHEN 'P4' THEN 4
+  ELSE 5
+END`;
 
 export const findingsRouter = router({
   list: protectedProcedure.input(listFindingsInputSchema).query(async ({ ctx, input }) => {
@@ -180,6 +223,7 @@ export const findingsRouter = router({
       category: input.category,
       sourceType: input.sourceType,
       assetClass: input.assetClass,
+      riskLevel: input.riskLevel,
     };
 
     if (!snapshotRow) {
@@ -193,6 +237,7 @@ export const findingsRouter = router({
         filters,
         facetCounts: {
           categoryCounts: emptyCategoryCounts(),
+          riskLevelCounts: emptyRiskLevelCounts(),
           sourceCounts: [] as Array<{ sourceType: ConnectorSourceType; count: number }>,
           assetClassCounts: [] as Array<{ assetClass: AssetClass; count: number }>,
         },
@@ -211,6 +256,7 @@ export const findingsRouter = router({
         category: finding.category,
         sourceType: finding.sourceType,
         assetClass: finding.assetClass,
+        riskLevel: finding.riskLevel,
       })
       .from(finding)
       .where(and(eq(finding.snapshotId, snapshotRow.id), eq(finding.tenantId, tenantId)));
@@ -239,13 +285,22 @@ export const findingsRouter = router({
         sourceRef: finding.sourceRef,
         evidence: finding.evidence,
         detectedAt: finding.detectedAt,
+        riskLevel: finding.riskLevel,
+        replacementPriority: finding.replacementPriority,
         assetIdentifier: asset.identifier,
         connectorDisplayName: asset.connectorDisplayName,
       })
       .from(finding)
       .innerJoin(asset, eq(finding.assetId, asset.id))
       .where(and(...filterConditions))
-      .orderBy(asc(finding.category), asc(finding.detectedAt), asc(finding.id))
+      .orderBy(
+        riskLevelOrder,
+        replacementPriorityOrder,
+        asc(finding.category),
+        asc(finding.code),
+        asc(finding.sourceRef),
+        asc(finding.id),
+      )
       .limit(input.limit)
       .offset(input.offset);
 
@@ -264,6 +319,8 @@ export const findingsRouter = router({
       connectorDisplayName: row.connectorDisplayName,
       evidence: projectEvidence(row.evidence),
       detectedAt: row.detectedAt,
+      riskLevel: row.riskLevel,
+      replacementPriority: row.replacementPriority,
     }));
 
     return {
@@ -346,6 +403,8 @@ export const findingsRouter = router({
         sourceRef: finding.sourceRef,
         evidence: finding.evidence,
         detectedAt: finding.detectedAt,
+        riskLevel: finding.riskLevel,
+        replacementPriority: finding.replacementPriority,
         assetIdentifier: asset.identifier,
         connectorDisplayName: asset.connectorDisplayName,
       })
@@ -382,6 +441,8 @@ export const findingsRouter = router({
       connectorDisplayName: findingRow.connectorDisplayName,
       evidence: projectEvidence(findingRow.evidence),
       detectedAt: findingRow.detectedAt,
+      riskLevel: findingRow.riskLevel,
+      replacementPriority: findingRow.replacementPriority,
     };
 
     return {
@@ -414,4 +475,6 @@ export interface FindingsBrowseItem {
   connectorDisplayName: string;
   evidence: ProjectedFindingEvidence;
   detectedAt: Date;
+  riskLevel: RiskLevel;
+  replacementPriority: ReplacementPriority | null;
 }
