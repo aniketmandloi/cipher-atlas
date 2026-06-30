@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import NextLink from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 type Href = Parameters<typeof NextLink>[0]["href"];
@@ -130,6 +130,8 @@ function FilterButton({
 }
 
 export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const urlFilters = readBrowseFilters(searchParams);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(urlFilters.category);
@@ -193,6 +195,31 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
     ? Object.values(facetCounts.categoryCounts).reduce((sum, count) => sum + count, 0)
     : 0;
 
+  function applyBrowseFilters(nextFilters: Partial<{
+    category: CategoryFilter;
+    riskLevel: RiskLevelFilter;
+    source: SourceFilter;
+    assetClass: AssetClassFilter;
+    standards: StandardsFilter;
+  }>) {
+    const filters = {
+      category: nextFilters.category ?? categoryFilter,
+      riskLevel: nextFilters.riskLevel ?? riskLevelFilter,
+      source: nextFilters.source ?? sourceFilter,
+      assetClass: nextFilters.assetClass ?? assetClassFilter,
+      standards: nextFilters.standards ?? standardsFilter,
+    };
+    const nextQueryString = buildFilterQueryString(filters);
+
+    setCategoryFilter(filters.category);
+    setRiskLevelFilter(filters.riskLevel);
+    setSourceFilter(filters.source);
+    setAssetClassFilter(filters.assetClass);
+    setStandardsFilter(filters.standards);
+    setSelectedFindingId(null);
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  }
+
   if (findingsQuery.isLoading) {
     return (
       <ScrollReveal delay={0.12}>
@@ -255,10 +282,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                   <p className="text-xs text-muted-foreground">{card.description}</p>
                   <FilterButton
                     active={active}
-                    onClick={() => {
-                      setCategoryFilter(card.key);
-                      setSelectedFindingId(null);
-                    }}
+                    onClick={() => applyBrowseFilters({ category: card.key })}
                   >
                     {count === 0 ? "0 in category" : "View category"}
                   </FilterButton>
@@ -275,10 +299,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
           <div className="flex flex-wrap gap-2">
             <FilterButton
               active={categoryFilter === "all"}
-              onClick={() => {
-                setCategoryFilter("all");
-                setSelectedFindingId(null);
-              }}
+              onClick={() => applyBrowseFilters({ category: "all" })}
             >
               All categories
             </FilterButton>
@@ -286,10 +307,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
               <FilterButton
                 key={card.key}
                 active={categoryFilter === card.key}
-                onClick={() => {
-                  setCategoryFilter(card.key);
-                  setSelectedFindingId(null);
-                }}
+                onClick={() => applyBrowseFilters({ category: card.key })}
               >
                 {card.label}
               </FilterButton>
@@ -300,10 +318,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
             <div className="flex flex-wrap gap-2">
               <FilterButton
                 active={riskLevelFilter === "all"}
-                onClick={() => {
-                  setRiskLevelFilter("all");
-                  setSelectedFindingId(null);
-                }}
+                onClick={() => applyBrowseFilters({ riskLevel: "all" })}
               >
                 All risk levels
               </FilterButton>
@@ -313,10 +328,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                   <FilterButton
                     key={card.key}
                     active={riskLevelFilter === card.key}
-                    onClick={() => {
-                      setRiskLevelFilter(card.key);
-                      setSelectedFindingId(null);
-                    }}
+                    onClick={() => applyBrowseFilters({ riskLevel: card.key })}
                   >
                     {card.label} ({count})
                   </FilterButton>
@@ -329,10 +341,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
             <div className="flex flex-wrap gap-2">
               <FilterButton
                 active={sourceFilter === "all"}
-                onClick={() => {
-                  setSourceFilter("all");
-                  setSelectedFindingId(null);
-                }}
+                onClick={() => applyBrowseFilters({ source: "all" })}
               >
                 All sources
               </FilterButton>
@@ -340,10 +349,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                 <FilterButton
                   key={entry.sourceType}
                   active={sourceFilter === entry.sourceType}
-                  onClick={() => {
-                    setSourceFilter(entry.sourceType);
-                    setSelectedFindingId(null);
-                  }}
+                  onClick={() => applyBrowseFilters({ source: entry.sourceType })}
                 >
                   {entry.sourceType.toUpperCase()} ({entry.count})
                 </FilterButton>
@@ -355,10 +361,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
             <div className="flex flex-wrap gap-2">
               <FilterButton
                 active={assetClassFilter === "all"}
-                onClick={() => {
-                  setAssetClassFilter("all");
-                  setSelectedFindingId(null);
-                }}
+                onClick={() => applyBrowseFilters({ assetClass: "all" })}
               >
                 All asset classes
               </FilterButton>
@@ -366,10 +369,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                 <FilterButton
                   key={entry.assetClass}
                   active={assetClassFilter === entry.assetClass}
-                  onClick={() => {
-                    setAssetClassFilter(entry.assetClass);
-                    setSelectedFindingId(null);
-                  }}
+                  onClick={() => applyBrowseFilters({ assetClass: entry.assetClass })}
                 >
                   {assetClassLabel(entry.assetClass)} ({entry.count})
                 </FilterButton>
@@ -385,28 +385,19 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
               <div className="flex flex-wrap gap-2">
                 <FilterButton
                   active={standardsFilter === "all"}
-                  onClick={() => {
-                    setStandardsFilter("all");
-                    setSelectedFindingId(null);
-                  }}
+                  onClick={() => applyBrowseFilters({ standards: "all" })}
                 >
                   All findings
                 </FilterButton>
                 <FilterButton
                   active={standardsFilter === "with"}
-                  onClick={() => {
-                    setStandardsFilter("with");
-                    setSelectedFindingId(null);
-                  }}
+                  onClick={() => applyBrowseFilters({ standards: "with" })}
                 >
                   With NIST mapping ({facetCounts?.standardsRelevantCount ?? 0})
                 </FilterButton>
                 <FilterButton
                   active={standardsFilter === "without"}
-                  onClick={() => {
-                    setStandardsFilter("without");
-                    setSelectedFindingId(null);
-                  }}
+                  onClick={() => applyBrowseFilters({ standards: "without" })}
                 >
                   No NIST mapping ({totalFindings - (facetCounts?.standardsRelevantCount ?? 0)})
                 </FilterButton>
