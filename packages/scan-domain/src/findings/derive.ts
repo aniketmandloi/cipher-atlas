@@ -7,12 +7,34 @@ export const CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS = 90;
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const weakCipherMarkers = ["RC4", "3DES", "DES", "NULL", "EXPORT", "MD5"] as const;
+const cryptographyRelevantPackages = new Set([
+  "openssl",
+  "libgcrypt",
+  "libgcrypt20",
+  "bcprov-jdk15on",
+  "bouncycastle",
+  "pycrypto",
+  "pycryptodome",
+  "cryptography",
+  "libsodium",
+  "sodium-native",
+  "node-forge",
+]);
+const hndlHeuristicMarkers = [
+  "long_term_confidentiality",
+  "archive_encryption",
+  "store_now_decrypt_later",
+  "harvest_now_decrypt_later",
+  "hndl_indicator",
+] as const;
 
 const findingCodeToCategory: Record<FindingCode, FindingCategory> = {
   certificate_expired: "certificate",
   certificate_expiring_soon: "certificate",
   tls_outdated_protocol: "tls",
   tls_weak_cipher: "tls",
+  dependency_vulnerable_package: "dependency",
+  hndl_exposure: "hndl",
 };
 
 export function deriveFindings(assets: AssetRecord[], context: { now: Date }): Finding[] {
@@ -26,6 +48,14 @@ export function deriveFindings(assets: AssetRecord[], context: { now: Date }): F
 
       if (asset.assetClass === "tls_config") {
         findings.push(...deriveTlsFindings(asset, context.now));
+      }
+
+      if (asset.assetClass === "dependency") {
+        findings.push(...deriveDependencyFindings(asset, context.now));
+      }
+
+      if (asset.assetClass === "hndl_signal") {
+        findings.push(...deriveHndlFindings(asset, context.now));
       }
     } catch (err) {
       console.warn("[scan-domain] deriveFindings: skipped malformed asset", asset.id, err);
@@ -107,6 +137,129 @@ function deriveTlsFindings(asset: AssetRecord, now: Date): Finding[] {
   }
 
   return findings;
+}
+
+function deriveDependencyFindings(asset: AssetRecord, now: Date): Finding[] {
+  const metadata = asset.evidence.metadata;
+  const packageName = firstString(metadata, ["packageName", "package", "name"]);
+  const packageVersion = firstString(metadata, ["packageVersion", "version"]);
+  const vulnerabilityId = firstString(metadata, ["vulnerabilityId", "advisoryId", "cveId", "cve"]);
+  const manifestSource = firstString(metadata, ["manifestSource"]);
+
+  if (!hasVulnerablePackageExposure(packageName, packageVersion, vulnerabilityId)) {
+    return [];
+  }
+
+  const packageLabel = packageName
+    ? packageVersion
+      ? `${packageName}@${packageVersion}`
+      : packageName
+    : vulnerabilityId ?? "unknown package";
+
+  const repositoryRef = asset.sourceRef;
+  const locator = asset.evidence.locator;
+  const manifestLabel = manifestSource ? `manifest ${manifestSource}` : "manifest";
+  const advisoryText = vulnerabilityId ? `Advisory ${vulnerabilityId} indicates` : "Launch policy flags";
+  const rationale = `${advisoryText} cryptography-relevant exposure in ${packageLabel} from ${manifestLabel} in repository ${repositoryRef}. Evidence locator: ${locator}.`;
+
+  return [
+    finding(asset, {
+      code: "dependency_vulnerable_package",
+      title: "Vulnerable cryptography-relevant package",
+      rationale,
+      detectedAt: now,
+    }),
+  ];
+}
+
+function deriveHndlFindings(asset: AssetRecord, now: Date): Finding[] {
+  const metadata = asset.evidence.metadata;
+  const matchedHeuristic = findMatchedHndlHeuristic(metadata);
+
+  if (!matchedHeuristic) {
+    return [];
+  }
+
+  const heuristicLabel = formatHndlHeuristicLabel(matchedHeuristic);
+  const rationale = `Asset ${asset.id} flagged for harvest-now-decrypt-later risk because heuristic "${heuristicLabel}" matched. Long-lived encrypted data protected by classical cryptography may be decrypted once quantum-capable adversaries harvest ciphertext today. Evidence locator: ${asset.evidence.locator}; source: ${asset.sourceRef}.`;
+
+  return [
+    finding(asset, {
+      code: "hndl_exposure",
+      title: "Harvest-now-decrypt-later exposure",
+      rationale,
+      detectedAt: now,
+    }),
+  ];
+}
+
+function hasVulnerablePackageExposure(
+  packageName: string | null,
+  packageVersion: string | null,
+  vulnerabilityId: string | null,
+): boolean {
+  if (!packageName || !isCryptographyRelevantPackage(packageName)) {
+    return false;
+  }
+
+  if (vulnerabilityId) {
+    return true;
+  }
+
+  return packageVersion !== null;
+}
+
+function isCryptographyRelevantPackage(packageName: string): boolean {
+  const normalized = normalizePackageName(packageName);
+
+  return cryptographyRelevantPackages.has(normalized);
+}
+
+function normalizePackageName(packageName: string): string {
+  const lower = packageName.toLowerCase().trim();
+  const segments = lower.split("/");
+
+  return segments[segments.length - 1] ?? lower;
+}
+
+function findMatchedHndlHeuristic(metadata: Record<string, unknown>): string | null {
+  const explicitMarker = firstString(metadata, ["hndlHeuristic", "hndlIndicator", "heuristic"]);
+  if (explicitMarker && matchesHndlHeuristic(explicitMarker)) {
+    return explicitMarker;
+  }
+
+  for (const marker of hndlHeuristicMarkers) {
+    const value = metadata[marker];
+    if (isTruthyMetadataValue(value)) {
+      return marker;
+    }
+  }
+
+  return null;
+}
+
+function matchesHndlHeuristic(value: string): boolean {
+  const normalized = value.toLowerCase().replace(/[\s-]+/g, "_");
+
+  return hndlHeuristicMarkers.some(
+    (marker) => normalized === marker || normalized.includes(marker.replace(/_/g, "")),
+  );
+}
+
+function formatHndlHeuristicLabel(heuristic: string): string {
+  return heuristic.replace(/_/g, " ");
+}
+
+function isTruthyMetadataValue(value: unknown): boolean {
+  if (value === true || value === 1) {
+    return true;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().toLowerCase() === "true";
+  }
+
+  return false;
 }
 
 function finding(

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeObservations } from "../inventory/normalize";
 import { deriveFindings } from "./derive";
-import type { AssetRecord, EvidenceEnvelope } from "../shared";
+import type { AssetRecord, EvidenceEnvelope, Observation } from "../shared";
+
+const SECRET_FIXTURE = "ghp_1234567890abcdefghijklmnop";
 
 describe("deriveFindings", () => {
   it("derives certificate findings with stable evidence and rationale", () => {
@@ -48,7 +51,7 @@ describe("deriveFindings", () => {
       ]),
     );
     expect(findings[0]?.rationale).toContain("asset asset-cert-");
-    expect(JSON.stringify(findings)).not.toContain("ghp_1234567890abcdefghijklmnop");
+    expect(JSON.stringify(findings)).not.toContain(SECRET_FIXTURE);
   });
 
   it("derives TLS findings from outdated protocol and weak cipher posture", () => {
@@ -94,6 +97,178 @@ describe("deriveFindings", () => {
         asset({ id: "asset-cert-empty", assetClass: "certificate", evidence: evidence() }),
         asset({ id: "asset-tls-empty", assetClass: "tls_config", evidence: evidence() }),
         asset({ id: "asset-dep", assetClass: "dependency", evidence: evidence() }),
+        asset({ id: "asset-hndl", assetClass: "hndl_signal", evidence: evidence() }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it("derives dependency findings for launch-relevant vulnerable package markers", () => {
+    const now = new Date("2026-06-29T12:00:00.000Z");
+    const [normalizedAsset] = normalizeObservations([
+      dependencyObservation({
+        sourceRef: "github:connector-repo",
+        evidence: {
+          packageName: "openssl",
+          packageVersion: "1.1.1k",
+          manifestSource: "package-lock.json",
+          token: SECRET_FIXTURE,
+        },
+      }),
+    ]);
+    const findings = deriveFindings([normalizedAsset!], { now });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toEqual(
+      expect.objectContaining({
+        assetId: normalizedAsset?.id,
+        category: "dependency",
+        code: "dependency_vulnerable_package",
+        title: "Vulnerable cryptography-relevant package",
+        sourceRef: "github:connector-repo",
+        sourceType: "github",
+      }),
+    );
+    expect(findings[0]?.rationale).toContain("openssl@1.1.1k");
+    expect(findings[0]?.rationale).toContain("manifest package-lock.json");
+    expect(findings[0]?.rationale).toContain("repository github:connector-repo");
+    expect(JSON.stringify(findings)).not.toContain(SECRET_FIXTURE);
+  });
+
+  it("skips dependency assets with package markers but no version or advisory", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-dep-no-version",
+          assetClass: "dependency",
+          evidence: evidence({
+            metadata: {
+              packageName: "openssl",
+              manifestSource: "package-lock.json",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it("derives HNDL findings when a launch heuristic marker is present", () => {
+    const now = new Date("2026-06-29T12:00:00.000Z");
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-hndl-hit",
+          assetClass: "hndl_signal",
+          sourceRef: "aws:connector-1",
+          evidence: evidence({
+            locator: "aws://hndl-signals",
+            metadata: {
+              long_term_confidentiality: true,
+              region: "us-east-1",
+            },
+          }),
+        }),
+      ],
+      { now },
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toEqual(
+      expect.objectContaining({
+        assetId: "asset-hndl-hit",
+        category: "hndl",
+        code: "hndl_exposure",
+        title: "Harvest-now-decrypt-later exposure",
+      }),
+    );
+    expect(findings[0]?.rationale).toContain("long term confidentiality");
+    expect(findings[0]?.rationale).toContain("harvest-now-decrypt-later");
+  });
+
+  it("derives HNDL findings from padded or differently-cased true string markers", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-hndl-string",
+          assetClass: "hndl_signal",
+          evidence: evidence({
+            metadata: {
+              archive_encryption: " True ",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe("hndl_exposure");
+    expect(findings[0]?.rationale).toContain("archive encryption");
+  });
+
+  it("derives dependency findings from explicit vulnerability identifiers on crypto packages", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-dep-cve",
+          assetClass: "dependency",
+          evidence: evidence({
+            metadata: {
+              packageName: "cryptography",
+              vulnerabilityId: "CVE-2024-1234",
+              manifestSource: "requirements.txt",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe("dependency_vulnerable_package");
+    expect(findings[0]?.rationale).toContain("CVE-2024-1234");
+    expect(findings[0]?.rationale).toContain("manifest requirements.txt");
+  });
+
+  it("skips dependency findings for unrelated packages even with advisory metadata", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-dep-unrelated",
+          assetClass: "dependency",
+          evidence: evidence({
+            metadata: {
+              packageName: "lodash",
+              packageVersion: "4.17.21",
+              vulnerabilityId: "CVE-2024-1234",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toEqual([]);
+  });
+
+  it("skips dependency findings for substring crypto false positives", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-dep-false-positive",
+          assetClass: "dependency",
+          evidence: evidence({
+            metadata: {
+              packageName: "my-rsa-utils",
+              packageVersion: "1.0.0",
+            },
+          }),
+        }),
       ],
       { now: new Date("2026-06-29T12:00:00.000Z") },
     );
@@ -109,6 +284,11 @@ describe("deriveFindings", () => {
         assetClass: "tls_config",
         evidence: evidence({ metadata: { protocolVersion: "TLSv1.1" } }),
       }),
+      asset({
+        id: "asset-dep-1",
+        assetClass: "dependency",
+        evidence: evidence({ metadata: { packageName: "openssl", packageVersion: "3.0.0" } }),
+      }),
     ];
 
     expect(JSON.stringify(deriveFindings(assets, { now }))).toBe(JSON.stringify(deriveFindings(assets, { now })));
@@ -120,6 +300,11 @@ describe("deriveFindings", () => {
         id: "asset-tls-stable",
         assetClass: "tls_config",
         evidence: evidence({ metadata: { protocolVersion: "TLSv1.0" } }),
+      }),
+      asset({
+        id: "asset-hndl-stable",
+        assetClass: "hndl_signal",
+        evidence: evidence({ metadata: { hndlHeuristic: "archive_encryption" } }),
       }),
     ];
 
@@ -176,5 +361,28 @@ function certificate(overrides: Partial<EvidenceEnvelope["certificate"]> = {}): 
     notAfter: new Date("2026-07-01T00:00:00.000Z"),
     fingerprint: "AA:BB:CC",
     ...overrides,
+  };
+}
+
+function dependencyObservation(overrides: Partial<Observation> = {}): Observation {
+  const { evidence: evidenceOverrides, ...restOverrides } = overrides;
+
+  return {
+    tenantId: "tenant-1",
+    snapshotId: "snapshot-1",
+    scanJobId: "scan-1",
+    scanAttemptId: "attempt-1",
+    connectorId: "connector-1",
+    connectorDisplayName: "GitHub",
+    sourceType: "github",
+    sourceRef: "github:connector-repo",
+    assetClass: "dependency",
+    locator: "github://dependency-manifests",
+    capturedAt: new Date("2026-06-29T12:00:00.000Z"),
+    evidence: {
+      identifier: "connector-1:dependency",
+      ...evidenceOverrides,
+    },
+    ...restOverrides,
   };
 }
