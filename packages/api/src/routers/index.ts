@@ -1,5 +1,6 @@
 import { protectedProcedure, publicProcedure, router } from "../index";
 import { connectorsRouter } from "./connectors";
+import { findingsRouter } from "./findings";
 import { scansRouter } from "./scans";
 import { todoRouter } from "./todo";
 
@@ -14,6 +15,7 @@ export const appRouter = router({
     };
   }),
   connectors: connectorsRouter,
+  findings: findingsRouter,
   scans: scansRouter,
   todo: todoRouter,
 });

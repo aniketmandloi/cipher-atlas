@@ -17,6 +17,7 @@ import {
   type CoverageOverall,
   type ScanStatus,
 } from "../scans-utils";
+import FindingsBrowse from "./findings-browse";
 
 interface Props {
   scanId: string;
@@ -135,10 +136,11 @@ export default function ScanDetailView({ scanId }: Props) {
                 </Badge>
               </div>
             </CardHeader>
-            {overall === "full" && (
+            {overall === "full" && scan.status !== "completed" && (
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  No findings yet. The relevant scope was scanned successfully.
+                  All selected sources were scanned. Findings will appear here after the scan
+                  completes.
                 </p>
               </CardContent>
             )}
@@ -186,6 +188,10 @@ export default function ScanDetailView({ scanId }: Props) {
             </div>
           </div>
         </ScrollReveal>
+      )}
+
+      {scan.status === "completed" && (
+        <FindingsBrowse scanId={scanId} coverageOverall={overall} />
       )}
 
       {/* Audit block */}
