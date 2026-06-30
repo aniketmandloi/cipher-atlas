@@ -35,6 +35,10 @@ export const findingCode = pgEnum("finding_code", [
   "hndl_exposure",
 ]);
 
+export const findingRiskLevel = pgEnum("finding_risk_level", ["critical", "high", "medium", "low"]);
+
+export const replacementPriority = pgEnum("replacement_priority", ["P1", "P2", "P3", "P4"]);
+
 export const finding = pgTable(
   "finding",
   {
@@ -57,6 +61,8 @@ export const finding = pgTable(
     sourceRef: text("source_ref").notNull(),
     evidence: jsonb("evidence").$type<InventoryEvidenceEnvelope>().notNull(),
     detectedAt: timestamp("detected_at", { withTimezone: true }).notNull(),
+    riskLevel: findingRiskLevel("risk_level").notNull(),
+    replacementPriority: replacementPriority("replacement_priority"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
@@ -68,6 +74,7 @@ export const finding = pgTable(
     index("finding_tenant_id_idx").on(table.tenantId),
     index("finding_snapshot_id_idx").on(table.snapshotId),
     index("finding_snapshot_category_idx").on(table.snapshotId, table.category),
+    index("finding_snapshot_risk_priority_idx").on(table.snapshotId, table.riskLevel, table.replacementPriority),
     check(
       "finding_category_code_match",
       sql`(${table.category} = 'certificate' AND ${table.code} IN ('certificate_expired', 'certificate_expiring_soon'))

@@ -64,6 +64,12 @@ describe("findings router browse contract", () => {
       dependency: 0,
       hndl: 0,
     });
+    expect(result.facetCounts.riskLevelCounts).toEqual({
+      critical: 0,
+      high: 1,
+      medium: 1,
+      low: 0,
+    });
     expect(result.facetCounts.sourceCounts).toEqual([{ sourceType: "github", count: 2 }]);
     expect(result.facetCounts.assetClassCounts).toEqual([
       { assetClass: "certificate", count: 1 },
@@ -87,6 +93,8 @@ describe("findings router browse contract", () => {
         sourceRef: "repo/cert.pem",
         title: "Expired certificate",
         rationale: "Certificate expired yesterday.",
+        riskLevel: "high",
+        replacementPriority: "P1",
         evidence: expect.objectContaining({
           locator: "s3://evidence/cert",
           redacted: true,
@@ -103,6 +111,8 @@ describe("findings router browse contract", () => {
         sourceRef: "repo/tls.json",
         title: "Weak TLS cipher",
         rationale: "TLS endpoint negotiates a weak cipher suite.",
+        riskLevel: "medium",
+        replacementPriority: "P3",
         evidence: expect.objectContaining({
           locator: "s3://evidence/tls",
         }),
@@ -144,6 +154,32 @@ describe("findings router browse contract", () => {
     expect(result.items[0]?.category).toBe("certificate");
   });
 
+  it("applies risk level filter while keeping full snapshot facet counts", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
+      .mockReturnValueOnce(selectLimitRows([snapshotRow("scan-1", "snapshot-1")]))
+      .mockReturnValueOnce(selectWhereRows(facetRows()))
+      .mockReturnValueOnce(selectWhereRows([{ total: 1 }]))
+      .mockReturnValueOnce(selectListRows([listRows()[0]!]));
+
+    const result = await createCaller("user-1").list({
+      scanId: "scan-1",
+      riskLevel: "high",
+    });
+
+    expect(result.filters).toEqual({
+      riskLevel: "high",
+    });
+    expect(result.facetCounts.riskLevelCounts).toEqual({
+      critical: 0,
+      high: 1,
+      medium: 1,
+      low: 0,
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.riskLevel).toBe("high");
+  });
+
   it("returns empty rows and zero facet counts for completed scans without findings", async () => {
     selectMock
       .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
@@ -159,6 +195,12 @@ describe("findings router browse contract", () => {
       tls: 0,
       dependency: 0,
       hndl: 0,
+    });
+    expect(result.facetCounts.riskLevelCounts).toEqual({
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
     });
     expect(result.items).toEqual([]);
     expect(result.page).toMatchObject({
@@ -180,6 +222,12 @@ describe("findings router browse contract", () => {
       tls: 0,
       dependency: 0,
       hndl: 0,
+    });
+    expect(result.facetCounts.riskLevelCounts).toEqual({
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
     });
     expect(result.items).toEqual([]);
     expect(selectMock).toHaveBeenCalledTimes(2);
@@ -276,6 +324,8 @@ describe("findings router get contract", () => {
         connectorDisplayName: "GitHub snapshot",
         sourceRef: "repo/cert.pem",
         rationale: "Certificate expired yesterday.",
+        riskLevel: "high",
+        replacementPriority: "P1",
         evidence: expect.objectContaining({
           locator: "s3://evidence/cert",
           redacted: true,
@@ -360,8 +410,8 @@ function snapshotRow(scanJobId: string, id: string) {
 
 function facetRows() {
   return [
-    { category: "certificate", sourceType: "github", assetClass: "certificate" },
-    { category: "tls", sourceType: "github", assetClass: "tls_config" },
+    { category: "certificate", sourceType: "github", assetClass: "certificate", riskLevel: "high" },
+    { category: "tls", sourceType: "github", assetClass: "tls_config", riskLevel: "medium" },
   ];
 }
 
@@ -387,6 +437,8 @@ function listRows() {
         metadata: { secret: "should-not-leak" },
       },
       detectedAt: baseDate,
+      riskLevel: "high",
+      replacementPriority: "P1",
       assetIdentifier: "CN=example.com",
       connectorDisplayName: "GitHub snapshot",
     },
@@ -410,6 +462,8 @@ function listRows() {
         metadata: {},
       },
       detectedAt: baseDate,
+      riskLevel: "medium",
+      replacementPriority: "P3",
       assetIdentifier: "api.example.com:443",
       connectorDisplayName: "GitHub snapshot",
     },

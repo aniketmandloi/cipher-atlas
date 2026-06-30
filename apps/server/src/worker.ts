@@ -304,6 +304,8 @@ async function finalizeScanJobWithCoverage(
               sourceRef: record.sourceRef,
               evidence: record.evidence,
               detectedAt: record.detectedAt,
+              riskLevel: record.riskLevel,
+              replacementPriority: record.replacementPriority,
               createdAt: finishedAt,
               updatedAt: finishedAt,
             })),

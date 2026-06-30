@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { trpc } from "@/utils/trpc";
 import { formatDate, type CoverageOverall } from "../scans-utils";
-import { assetClassLabel, categoryLabel } from "./findings-labels";
+import { assetClassLabel, categoryLabel, replacementPriorityLabel, riskLevelBadgeVariant, riskLevelLabel } from "./findings-labels";
 
 interface Props {
   scanId: string;
@@ -23,9 +23,21 @@ interface Props {
 }
 
 type FindingCategory = "certificate" | "tls" | "dependency" | "hndl";
+type RiskLevel = "critical" | "high" | "medium" | "low";
 type CategoryFilter = "all" | FindingCategory;
+type RiskLevelFilter = "all" | RiskLevel;
 type SourceFilter = "all" | "github" | "aws";
 type AssetClassFilter = "all" | "certificate" | "tls_config" | "dependency" | "hndl_signal";
+
+const RISK_LEVEL_CARDS: Array<{
+  key: RiskLevel;
+  label: string;
+}> = [
+  { key: "critical", label: "Critical" },
+  { key: "high", label: "High" },
+  { key: "medium", label: "Medium" },
+  { key: "low", label: "Low" },
+];
 
 const CATEGORY_CARDS: Array<{
   key: FindingCategory;
@@ -40,11 +52,13 @@ const CATEGORY_CARDS: Array<{
 
 function buildFilterQueryString(filters: {
   category: CategoryFilter;
+  riskLevel: RiskLevelFilter;
   source: SourceFilter;
   assetClass: AssetClassFilter;
 }): string {
   const params = new URLSearchParams();
   if (filters.category !== "all") params.set("category", filters.category);
+  if (filters.riskLevel !== "all") params.set("riskLevel", filters.riskLevel);
   if (filters.source !== "all") params.set("source", filters.source);
   if (filters.assetClass !== "all") params.set("assetClass", filters.assetClass);
   return params.toString();
@@ -52,10 +66,12 @@ function buildFilterQueryString(filters: {
 
 function readBrowseFilters(searchParams: Pick<URLSearchParams, "get">): {
   category: CategoryFilter;
+  riskLevel: RiskLevelFilter;
   source: SourceFilter;
   assetClass: AssetClassFilter;
 } {
   const category = searchParams.get("category");
+  const riskLevel = searchParams.get("riskLevel");
   const source = searchParams.get("source");
   const assetClass = searchParams.get("assetClass");
 
@@ -66,6 +82,13 @@ function readBrowseFilters(searchParams: Pick<URLSearchParams, "get">): {
       category === "dependency" ||
       category === "hndl"
         ? category
+        : "all",
+    riskLevel:
+      riskLevel === "critical" ||
+      riskLevel === "high" ||
+      riskLevel === "medium" ||
+      riskLevel === "low"
+        ? riskLevel
         : "all",
     source: source === "github" || source === "aws" ? source : "all",
     assetClass:
@@ -104,6 +127,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
   const searchParams = useSearchParams();
   const urlFilters = readBrowseFilters(searchParams);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(urlFilters.category);
+  const [riskLevelFilter, setRiskLevelFilter] = useState<RiskLevelFilter>(urlFilters.riskLevel);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(urlFilters.source);
   const [assetClassFilter, setAssetClassFilter] = useState<AssetClassFilter>(urlFilters.assetClass);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
@@ -111,6 +135,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
   useEffect(() => {
     const nextFilters = readBrowseFilters(searchParams);
     setCategoryFilter(nextFilters.category);
+    setRiskLevelFilter(nextFilters.riskLevel);
     setSourceFilter(nextFilters.source);
     setAssetClassFilter(nextFilters.assetClass);
   }, [searchParams]);
@@ -119,22 +144,24 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
     () =>
       buildFilterQueryString({
         category: categoryFilter,
+        riskLevel: riskLevelFilter,
         source: sourceFilter,
         assetClass: assetClassFilter,
       }),
-    [categoryFilter, sourceFilter, assetClassFilter],
+    [categoryFilter, riskLevelFilter, sourceFilter, assetClassFilter],
   );
 
   const queryInput = useMemo(
     () => ({
       scanId,
       ...(categoryFilter !== "all" ? { category: categoryFilter } : {}),
+      ...(riskLevelFilter !== "all" ? { riskLevel: riskLevelFilter } : {}),
       ...(sourceFilter !== "all" ? { sourceType: sourceFilter } : {}),
       ...(assetClassFilter !== "all" ? { assetClass: assetClassFilter } : {}),
       limit: 100,
       offset: 0,
     }),
-    [scanId, categoryFilter, sourceFilter, assetClassFilter],
+    [scanId, categoryFilter, riskLevelFilter, sourceFilter, assetClassFilter],
   );
 
   const findingsQuery = useQuery({
@@ -255,6 +282,35 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
             ))}
           </div>
 
+          {(facetCounts?.riskLevelCounts && totalFindings > 0) && (
+            <div className="flex flex-wrap gap-2">
+              <FilterButton
+                active={riskLevelFilter === "all"}
+                onClick={() => {
+                  setRiskLevelFilter("all");
+                  setSelectedFindingId(null);
+                }}
+              >
+                All risk levels
+              </FilterButton>
+              {RISK_LEVEL_CARDS.map((card) => {
+                const count = facetCounts.riskLevelCounts[card.key] ?? 0;
+                return (
+                  <FilterButton
+                    key={card.key}
+                    active={riskLevelFilter === card.key}
+                    onClick={() => {
+                      setRiskLevelFilter(card.key);
+                      setSelectedFindingId(null);
+                    }}
+                  >
+                    {card.label} ({count})
+                  </FilterButton>
+                );
+              })}
+            </div>
+          )}
+
           {(facetCounts?.sourceCounts.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-2">
               <FilterButton
@@ -358,7 +414,12 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                               {item.connectorDisplayName} · {item.sourceType.toUpperCase()}
                             </p>
                           </div>
-                          <Badge variant="outline">{categoryLabel(item.category)}</Badge>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <Badge variant={riskLevelBadgeVariant(item.riskLevel)}>
+                              {riskLevelLabel(item.riskLevel)}
+                            </Badge>
+                            <Badge variant="outline">{replacementPriorityLabel(item.replacementPriority)}</Badge>
+                          </div>
                         </div>
                         <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">
                           {item.rationale}
@@ -434,6 +495,22 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
+                        <p className="text-muted-foreground">Risk level</p>
+                        <p className="mt-0.5">
+                          <Badge variant={riskLevelBadgeVariant(selectedFinding.riskLevel)}>
+                            {riskLevelLabel(selectedFinding.riskLevel)}
+                          </Badge>
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Replacement priority</p>
+                        <p className="mt-0.5">
+                          {replacementPriorityLabel(selectedFinding.replacementPriority)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
                         <p className="text-muted-foreground">Captured</p>
                         <p className="mt-0.5">{formatDate(selectedFinding.evidence.capturedAt)}</p>
                       </div>
@@ -443,10 +520,6 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                           {selectedFinding.evidence.redacted ? "Redacted" : "Not redacted"}
                         </p>
                       </div>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Priority</p>
-                      <p className="mt-0.5">Not prioritized yet</p>
                     </div>
                     {selectedFinding.evidence.certificate && (
                       <div className="space-y-2 border-t pt-3">

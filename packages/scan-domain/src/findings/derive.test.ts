@@ -38,6 +38,8 @@ describe("deriveFindings", () => {
           category: "certificate",
           code: "certificate_expired",
           title: "Certificate expired",
+          riskLevel: "high",
+          replacementPriority: "P1",
           evidence: expect.objectContaining({
             certificate: expect.objectContaining({ subject: "CN=expired.example" }),
           }),
@@ -47,6 +49,8 @@ describe("deriveFindings", () => {
           category: "certificate",
           code: "certificate_expiring_soon",
           title: "Certificate expiring soon",
+          riskLevel: "medium",
+          replacementPriority: "P3",
         }),
       ]),
     );
@@ -79,12 +83,16 @@ describe("deriveFindings", () => {
           category: "tls",
           code: "tls_outdated_protocol",
           title: "Outdated TLS protocol",
+          riskLevel: "high",
+          replacementPriority: "P2",
         }),
         expect.objectContaining({
           assetId: "asset-tls-1",
           category: "tls",
           code: "tls_weak_cipher",
           title: "Weak TLS cipher",
+          riskLevel: "medium",
+          replacementPriority: "P3",
         }),
       ]),
     );
@@ -127,6 +135,8 @@ describe("deriveFindings", () => {
         category: "dependency",
         code: "dependency_vulnerable_package",
         title: "Vulnerable cryptography-relevant package",
+        riskLevel: "high",
+        replacementPriority: "P2",
         sourceRef: "github:connector-repo",
         sourceType: "github",
       }),
@@ -184,6 +194,8 @@ describe("deriveFindings", () => {
         category: "hndl",
         code: "hndl_exposure",
         title: "Harvest-now-decrypt-later exposure",
+        riskLevel: "critical",
+        replacementPriority: "P1",
       }),
     );
     expect(findings[0]?.rationale).toContain("long term confidentiality");
@@ -291,10 +303,17 @@ describe("deriveFindings", () => {
       }),
     ];
 
-    expect(JSON.stringify(deriveFindings(assets, { now }))).toBe(JSON.stringify(deriveFindings(assets, { now })));
+    const first = deriveFindings(assets, { now });
+    const second = deriveFindings(assets, { now });
+
+    expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+    expect(first.map((item) => [item.riskLevel, item.replacementPriority])).toEqual([
+      ["high", "P2"],
+      ["high", "P2"],
+    ]);
   });
 
-  it("finding ids are stable regardless of the clock value passed", () => {
+  it("finding ids are stable regardless of the clock value passed and exclude risk/priority", () => {
     const assets = [
       asset({
         id: "asset-tls-stable",
@@ -312,6 +331,9 @@ describe("deriveFindings", () => {
     const ids2 = deriveFindings(assets, { now: new Date("2026-12-31T23:59:59.000Z") }).map((f) => f.id);
 
     expect(ids1).toEqual(ids2);
+    for (const id of ids1) {
+      expect(id).not.toMatch(/critical|high|medium|low|P1|P2|P3/);
+    }
   });
 });
 
