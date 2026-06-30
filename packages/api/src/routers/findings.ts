@@ -26,6 +26,11 @@ const listFindingsInputSchema = z.object({
   offset: z.number().int().min(0).default(0),
 });
 
+const getFindingInputSchema = z.object({
+  scanId: z.string().min(1),
+  findingId: z.string().min(1),
+});
+
 type ConnectorSourceType = z.infer<typeof connectorSourceTypeSchema>;
 
 interface InventoryEvidenceEnvelope {
@@ -281,6 +286,115 @@ export const findingsRouter = router({
         returned: items.length,
         filteredTotal,
       },
+    };
+  }),
+
+  get: protectedProcedure.input(getFindingInputSchema).query(async ({ ctx, input }) => {
+    const tenantId = tenantScope(ctx.session.user.id);
+
+    const [scanRow] = await db
+      .select({
+        id: scanJob.id,
+        status: scanJob.status,
+        completedAt: scanJob.completedAt,
+      })
+      .from(scanJob)
+      .where(and(eq(scanJob.id, input.scanId), eq(scanJob.tenantId, tenantId)))
+      .limit(1);
+
+    if (!scanRow) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Scan not found",
+      });
+    }
+
+    if (scanRow.status !== "completed") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Findings are available only after a scan completes.",
+      });
+    }
+
+    const [snapshotRow] = await db
+      .select({
+        id: scanSnapshot.id,
+        publishedAt: scanSnapshot.publishedAt,
+      })
+      .from(scanSnapshot)
+      .where(and(eq(scanSnapshot.scanJobId, input.scanId), eq(scanSnapshot.tenantId, tenantId)))
+      .limit(1);
+
+    if (!snapshotRow) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Finding not found",
+      });
+    }
+
+    const [findingRow] = await db
+      .select({
+        id: finding.id,
+        snapshotId: finding.snapshotId,
+        assetId: finding.assetId,
+        assetClass: finding.assetClass,
+        category: finding.category,
+        code: finding.code,
+        title: finding.title,
+        rationale: finding.rationale,
+        sourceType: finding.sourceType,
+        sourceRef: finding.sourceRef,
+        evidence: finding.evidence,
+        detectedAt: finding.detectedAt,
+        assetIdentifier: asset.identifier,
+        connectorDisplayName: asset.connectorDisplayName,
+      })
+      .from(finding)
+      .innerJoin(asset, eq(finding.assetId, asset.id))
+      .where(
+        and(
+          eq(finding.id, input.findingId),
+          eq(finding.tenantId, tenantId),
+          eq(finding.snapshotId, snapshotRow.id),
+        ),
+      )
+      .limit(1);
+
+    if (!findingRow) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Finding not found",
+      });
+    }
+
+    const findingItem: FindingsBrowseItem = {
+      id: findingRow.id,
+      snapshotId: findingRow.snapshotId,
+      assetId: findingRow.assetId,
+      assetIdentifier: findingRow.assetIdentifier,
+      assetClass: findingRow.assetClass,
+      category: findingRow.category,
+      code: findingRow.code as FindingCode,
+      title: findingRow.title,
+      rationale: findingRow.rationale,
+      sourceType: findingRow.sourceType,
+      sourceRef: findingRow.sourceRef,
+      connectorDisplayName: findingRow.connectorDisplayName,
+      evidence: projectEvidence(findingRow.evidence),
+      detectedAt: findingRow.detectedAt,
+    };
+
+    return {
+      scan: {
+        id: scanRow.id,
+        status: "completed" as const,
+        completedAt: scanRow.completedAt,
+      },
+      snapshot: {
+        id: snapshotRow.id,
+        publishedAt: snapshotRow.publishedAt,
+      },
+      finding: findingItem,
     };
   }),
 });
