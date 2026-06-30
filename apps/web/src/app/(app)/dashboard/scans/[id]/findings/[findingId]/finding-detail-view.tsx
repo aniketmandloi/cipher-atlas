@@ -11,7 +11,7 @@ import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useQuery } from "@tanstack/react-query";
 
 import { trpc } from "@/utils/trpc";
-import { categoryLabel, assetClassLabel, replacementPriorityLabel, riskLevelBadgeVariant, riskLevelLabel } from "../../findings-labels";
+import { categoryLabel, assetClassLabel, nistMappingTypeBadgeVariant, nistMappingTypeLabel, replacementPriorityLabel, riskLevelBadgeVariant, riskLevelLabel } from "../../findings-labels";
 import { formatDate } from "../../../scans-utils";
 
 interface Props {
@@ -172,6 +172,37 @@ export default function FindingDetailView({ scanId, findingId, browseFiltersQuer
                 </div>
               </div>
             )}
+
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                NIST guidance
+              </p>
+              {finding.nistMapping ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={nistMappingTypeBadgeVariant(finding.nistMapping.mappingType)}>
+                      {nistMappingTypeLabel(finding.nistMapping.mappingType)}
+                    </Badge>
+                    {finding.nistMapping.mappingType === "interpretation" && (
+                      <p className="text-xs text-muted-foreground">
+                        Product interpretation — not a one-to-one NIST statement
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {finding.nistMapping.references.map((reference) => (
+                      <div key={reference.id}>
+                        <p className="font-medium">{reference.id}</p>
+                        <p className="text-xs text-muted-foreground">{reference.title}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="leading-relaxed">{finding.nistMapping.summary}</p>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">No NIST mapping for this finding</p>
+              )}
+            </div>
 
             <div className="space-y-3 border-t pt-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

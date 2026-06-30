@@ -10,11 +10,12 @@ import {
   type AssetClass,
   type FindingCategory,
   type FindingCode,
+  type NistMapping,
   type ReplacementPriority,
   type RiskLevel,
 } from "@cipher-atlas/scan-domain";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, eq, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
@@ -26,6 +27,7 @@ const listFindingsInputSchema = z.object({
   sourceType: connectorSourceTypeSchema.optional(),
   assetClass: assetClassSchema.optional(),
   riskLevel: riskLevelSchema.optional(),
+  standardsRelevant: z.boolean().optional(),
   limit: z.number().int().min(1).max(100).default(50),
   offset: z.number().int().min(0).default(0),
 });
@@ -109,23 +111,29 @@ function buildFacetCounts(
     sourceType: ConnectorSourceType;
     assetClass: AssetClass;
     riskLevel: RiskLevel;
+    nistMapping: FindingNistMapping | null;
   }>,
 ) {
   const categoryCounts = emptyCategoryCounts();
   const riskLevelCounts = emptyRiskLevelCounts();
   const sourceCountMap = new Map<ConnectorSourceType, number>();
   const assetClassCountMap = new Map<AssetClass, number>();
+  let standardsRelevantCount = 0;
 
   for (const row of rows) {
     categoryCounts[row.category] += 1;
     riskLevelCounts[row.riskLevel] += 1;
     sourceCountMap.set(row.sourceType, (sourceCountMap.get(row.sourceType) ?? 0) + 1);
     assetClassCountMap.set(row.assetClass, (assetClassCountMap.get(row.assetClass) ?? 0) + 1);
+    if (row.nistMapping !== null) {
+      standardsRelevantCount += 1;
+    }
   }
 
   return {
     categoryCounts,
     riskLevelCounts,
+    standardsRelevantCount,
     sourceCounts: [...sourceCountMap.entries()].map(([sourceType, facetCount]) => ({
       sourceType,
       count: facetCount,
@@ -137,6 +145,12 @@ function buildFacetCounts(
   };
 }
 
+interface FindingNistMapping {
+  mappingType: "direct" | "interpretation";
+  references: Array<{ id: string; title: string; url?: string }>;
+  summary: string;
+}
+
 function buildFilterConditions(
   snapshotId: string,
   tenantId: string,
@@ -145,6 +159,7 @@ function buildFilterConditions(
     sourceType?: ConnectorSourceType;
     assetClass?: AssetClass;
     riskLevel?: RiskLevel;
+    standardsRelevant?: boolean;
   },
 ): SQL[] {
   const conditions: SQL[] = [eq(finding.snapshotId, snapshotId), eq(finding.tenantId, tenantId)];
@@ -160,6 +175,12 @@ function buildFilterConditions(
   }
   if (filters.riskLevel) {
     conditions.push(eq(finding.riskLevel, filters.riskLevel));
+  }
+  if (filters.standardsRelevant === true) {
+    conditions.push(isNotNull(finding.nistMapping));
+  }
+  if (filters.standardsRelevant === false) {
+    conditions.push(isNull(finding.nistMapping));
   }
 
   return conditions;
@@ -208,6 +229,7 @@ export const findingsRouter = router({
       sourceType: input.sourceType,
       assetClass: input.assetClass,
       riskLevel: input.riskLevel,
+      standardsRelevant: input.standardsRelevant,
     };
 
     if (!snapshotRow) {
@@ -222,6 +244,7 @@ export const findingsRouter = router({
         facetCounts: {
           categoryCounts: emptyCategoryCounts(),
           riskLevelCounts: emptyRiskLevelCounts(),
+          standardsRelevantCount: 0,
           sourceCounts: [] as Array<{ sourceType: ConnectorSourceType; count: number }>,
           assetClassCounts: [] as Array<{ assetClass: AssetClass; count: number }>,
         },
@@ -241,6 +264,7 @@ export const findingsRouter = router({
         sourceType: finding.sourceType,
         assetClass: finding.assetClass,
         riskLevel: finding.riskLevel,
+        nistMapping: finding.nistMapping,
       })
       .from(finding)
       .where(and(eq(finding.snapshotId, snapshotRow.id), eq(finding.tenantId, tenantId)));
@@ -271,6 +295,7 @@ export const findingsRouter = router({
         detectedAt: finding.detectedAt,
         riskLevel: finding.riskLevel,
         replacementPriority: finding.replacementPriority,
+        nistMapping: finding.nistMapping,
         assetIdentifier: asset.identifier,
         connectorDisplayName: asset.connectorDisplayName,
       })
@@ -307,6 +332,7 @@ export const findingsRouter = router({
       detectedAt: row.detectedAt,
       riskLevel: row.riskLevel,
       replacementPriority: row.replacementPriority,
+      nistMapping: row.nistMapping,
     }));
 
     return {
@@ -391,6 +417,7 @@ export const findingsRouter = router({
         detectedAt: finding.detectedAt,
         riskLevel: finding.riskLevel,
         replacementPriority: finding.replacementPriority,
+        nistMapping: finding.nistMapping,
         assetIdentifier: asset.identifier,
         connectorDisplayName: asset.connectorDisplayName,
       })
@@ -429,6 +456,7 @@ export const findingsRouter = router({
       detectedAt: findingRow.detectedAt,
       riskLevel: findingRow.riskLevel,
       replacementPriority: findingRow.replacementPriority,
+      nistMapping: findingRow.nistMapping,
     };
 
     return {
@@ -463,4 +491,5 @@ export interface FindingsBrowseItem {
   detectedAt: Date;
   riskLevel: RiskLevel;
   replacementPriority: ReplacementPriority | null;
+  nistMapping: NistMapping | null;
 }

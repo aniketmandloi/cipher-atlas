@@ -306,6 +306,7 @@ async function finalizeScanJobWithCoverage(
               detectedAt: record.detectedAt,
               riskLevel: record.riskLevel,
               replacementPriority: record.replacementPriority,
+              nistMapping: record.nistMapping,
               createdAt: finishedAt,
               updatedAt: finishedAt,
             })),

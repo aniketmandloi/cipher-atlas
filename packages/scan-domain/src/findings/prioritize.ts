@@ -47,7 +47,7 @@ export function prioritizeFinding(code: FindingCode): {
   return { riskLevel: "low", replacementPriority: null };
 }
 
-export function applyPrioritization<T extends Omit<Finding, "riskLevel" | "replacementPriority">>(
+export function applyPrioritization<T extends Omit<Finding, "riskLevel" | "replacementPriority" | "nistMapping">>(
   finding: T,
 ): T & Pick<Finding, "riskLevel" | "replacementPriority"> {
   const { riskLevel, replacementPriority } = prioritizeFinding(finding.code);

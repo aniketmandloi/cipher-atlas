@@ -76,3 +76,25 @@ export function replacementPriorityLabel(priority: string | null): string {
       return priority;
   }
 }
+
+export function nistMappingTypeLabel(type: string): string {
+  switch (type) {
+    case "direct":
+      return "Direct mapping";
+    case "interpretation":
+      return "Product interpretation";
+    default:
+      return type;
+  }
+}
+
+export function nistMappingTypeBadgeVariant(type: string): BadgeVariant {
+  switch (type) {
+    case "direct":
+      return "secondary";
+    case "interpretation":
+      return "outline";
+    default:
+      return "outline";
+  }
+}

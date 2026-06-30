@@ -24,6 +24,12 @@ interface InventoryEvidenceEnvelope {
   };
 }
 
+interface FindingNistMapping {
+  mappingType: "direct" | "interpretation";
+  references: Array<{ id: string; title: string; url?: string }>;
+  summary: string;
+}
+
 export const findingCategory = pgEnum("finding_category", ["certificate", "tls", "dependency", "hndl"]);
 
 export const findingCode = pgEnum("finding_code", [
@@ -63,6 +69,7 @@ export const finding = pgTable(
     detectedAt: timestamp("detected_at", { withTimezone: true }).notNull(),
     riskLevel: findingRiskLevel("risk_level").notNull(),
     replacementPriority: replacementPriority("replacement_priority"),
+    nistMapping: jsonb("nist_mapping").$type<FindingNistMapping>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
