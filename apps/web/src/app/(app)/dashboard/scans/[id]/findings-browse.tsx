@@ -109,7 +109,9 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
 
   const items = findingsQuery.data?.items ?? [];
   const facetCounts = findingsQuery.data?.facetCounts;
+  const filteredTotal = findingsQuery.data?.page.filteredTotal ?? 0;
   const selectedFinding = items.find((item) => item.id === selectedFindingId) ?? null;
+  const hasMoreFindings = filteredTotal > items.length;
 
   const totalFindings = facetCounts
     ? Object.values(facetCounts.categoryCounts).reduce((sum, count) => sum + count, 0)
@@ -276,7 +278,9 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium">Drill-down</p>
               <p className="text-xs text-muted-foreground">
-                {findingsQuery.data?.page.filteredTotal ?? 0} matching
+                {hasMoreFindings
+                  ? `Showing first ${items.length} of ${filteredTotal} matching`
+                  : `${filteredTotal} matching`}
               </p>
             </div>
 

@@ -136,7 +136,7 @@ export default function ScanDetailView({ scanId }: Props) {
                 </Badge>
               </div>
             </CardHeader>
-            {overall === "full" && scan.status !== "completed" && (
+            {(scan.status === "queued" || scan.status === "running") && overall === "full" && (
               <CardContent>
                 <p className="text-sm text-muted-foreground">
                   All selected sources were scanned. Findings will appear here after the scan
