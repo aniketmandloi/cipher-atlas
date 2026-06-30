@@ -50,6 +50,34 @@ function buildFilterQueryString(filters: {
   return params.toString();
 }
 
+function readBrowseFilters(searchParams: Pick<URLSearchParams, "get">): {
+  category: CategoryFilter;
+  source: SourceFilter;
+  assetClass: AssetClassFilter;
+} {
+  const category = searchParams.get("category");
+  const source = searchParams.get("source");
+  const assetClass = searchParams.get("assetClass");
+
+  return {
+    category:
+      category === "certificate" ||
+      category === "tls" ||
+      category === "dependency" ||
+      category === "hndl"
+        ? category
+        : "all",
+    source: source === "github" || source === "aws" ? source : "all",
+    assetClass:
+      assetClass === "certificate" ||
+      assetClass === "tls_config" ||
+      assetClass === "dependency" ||
+      assetClass === "hndl_signal"
+        ? assetClass
+        : "all",
+  };
+}
+
 function FilterButton({
   active,
   onClick,
@@ -74,36 +102,18 @@ function FilterButton({
 
 export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
   const searchParams = useSearchParams();
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [assetClassFilter, setAssetClassFilter] = useState<AssetClassFilter>("all");
+  const urlFilters = readBrowseFilters(searchParams);
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(urlFilters.category);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(urlFilters.source);
+  const [assetClassFilter, setAssetClassFilter] = useState<AssetClassFilter>(urlFilters.assetClass);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
-  const [filtersRestored, setFiltersRestored] = useState(false);
 
   useEffect(() => {
-    if (filtersRestored) return;
-
-    const category = searchParams.get("category");
-    const source = searchParams.get("source");
-    const assetClass = searchParams.get("assetClass");
-
-    if (category === "certificate" || category === "tls" || category === "dependency" || category === "hndl") {
-      setCategoryFilter(category);
-    }
-    if (source === "github" || source === "aws") {
-      setSourceFilter(source);
-    }
-    if (
-      assetClass === "certificate" ||
-      assetClass === "tls_config" ||
-      assetClass === "dependency" ||
-      assetClass === "hndl_signal"
-    ) {
-      setAssetClassFilter(assetClass);
-    }
-
-    setFiltersRestored(true);
-  }, [filtersRestored, searchParams]);
+    const nextFilters = readBrowseFilters(searchParams);
+    setCategoryFilter(nextFilters.category);
+    setSourceFilter(nextFilters.source);
+    setAssetClassFilter(nextFilters.assetClass);
+  }, [searchParams]);
 
   const filterQueryString = useMemo(
     () =>
