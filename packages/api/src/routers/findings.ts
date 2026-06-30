@@ -14,7 +14,7 @@ import {
   type RiskLevel,
 } from "@cipher-atlas/scan-domain";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, eq, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
@@ -165,22 +165,6 @@ function buildFilterConditions(
   return conditions;
 }
 
-const riskLevelOrder = sql`CASE ${finding.riskLevel}
-  WHEN 'critical' THEN 1
-  WHEN 'high' THEN 2
-  WHEN 'medium' THEN 3
-  WHEN 'low' THEN 4
-  ELSE 5
-END`;
-
-const replacementPriorityOrder = sql`CASE ${finding.replacementPriority}
-  WHEN 'P1' THEN 1
-  WHEN 'P2' THEN 2
-  WHEN 'P3' THEN 3
-  WHEN 'P4' THEN 4
-  ELSE 5
-END`;
-
 export const findingsRouter = router({
   list: protectedProcedure.input(listFindingsInputSchema).query(async ({ ctx, input }) => {
     const tenantId = tenantScope(ctx.session.user.id);
@@ -294,8 +278,8 @@ export const findingsRouter = router({
       .innerJoin(asset, eq(finding.assetId, asset.id))
       .where(and(...filterConditions))
       .orderBy(
-        riskLevelOrder,
-        replacementPriorityOrder,
+        asc(finding.riskLevel),
+        asc(finding.replacementPriority),
         asc(finding.category),
         asc(finding.code),
         asc(finding.sourceRef),

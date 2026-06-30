@@ -10,6 +10,7 @@ EXCEPTION
 END $$;--> statement-breakpoint
 ALTER TABLE "finding" ADD COLUMN IF NOT EXISTS "risk_level" "finding_risk_level";--> statement-breakpoint
 ALTER TABLE "finding" ADD COLUMN IF NOT EXISTS "replacement_priority" "replacement_priority";--> statement-breakpoint
+ALTER TABLE "finding" ALTER COLUMN "risk_level" SET DEFAULT 'low'::finding_risk_level;--> statement-breakpoint
 UPDATE "finding" SET
   "risk_level" = CASE "code"
     WHEN 'hndl_exposure' THEN 'critical'::finding_risk_level
@@ -31,4 +32,5 @@ UPDATE "finding" SET
   END
 WHERE "risk_level" IS NULL;--> statement-breakpoint
 ALTER TABLE "finding" ALTER COLUMN "risk_level" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "finding" ALTER COLUMN "risk_level" DROP DEFAULT;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "finding_snapshot_risk_priority_idx" ON "finding" USING btree ("snapshot_id","risk_level","replacement_priority");

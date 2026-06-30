@@ -1,4 +1,4 @@
-type BadgeVariant = "default" | "secondary" | "destructive" | "outline" | "ghost";
+type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
 export function categoryLabel(category: string): string {
   switch (category) {
