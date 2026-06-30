@@ -3,7 +3,7 @@ import { z } from "zod";
 import { connectorSourceTypeSchema } from "../connectors/types";
 import { assetClassSchema, evidenceEnvelopeSchema } from "../shared";
 
-export const findingCategories = ["certificate", "tls"] as const;
+export const findingCategories = ["certificate", "tls", "dependency", "hndl"] as const;
 
 export const findingCategorySchema = z.enum(findingCategories);
 
@@ -12,6 +12,8 @@ export const findingCodes = [
   "certificate_expiring_soon",
   "tls_outdated_protocol",
   "tls_weak_cipher",
+  "dependency_vulnerable_package",
+  "hndl_exposure",
 ] as const;
 
 export const findingCodeSchema = z.enum(findingCodes);
@@ -21,6 +23,8 @@ const findingCodeCategoryMap: Record<(typeof findingCodes)[number], (typeof find
   certificate_expiring_soon: "certificate",
   tls_outdated_protocol: "tls",
   tls_weak_cipher: "tls",
+  dependency_vulnerable_package: "dependency",
+  hndl_exposure: "hndl",
 };
 
 export const findingSchema = z

@@ -24,13 +24,15 @@ interface InventoryEvidenceEnvelope {
   };
 }
 
-export const findingCategory = pgEnum("finding_category", ["certificate", "tls"]);
+export const findingCategory = pgEnum("finding_category", ["certificate", "tls", "dependency", "hndl"]);
 
 export const findingCode = pgEnum("finding_code", [
   "certificate_expired",
   "certificate_expiring_soon",
   "tls_outdated_protocol",
   "tls_weak_cipher",
+  "dependency_vulnerable_package",
+  "hndl_exposure",
 ]);
 
 export const finding = pgTable(
@@ -69,7 +71,9 @@ export const finding = pgTable(
     check(
       "finding_category_code_match",
       sql`(${table.category} = 'certificate' AND ${table.code} IN ('certificate_expired', 'certificate_expiring_soon'))
-          OR (${table.category} = 'tls' AND ${table.code} IN ('tls_outdated_protocol', 'tls_weak_cipher'))`,
+          OR (${table.category} = 'tls' AND ${table.code} IN ('tls_outdated_protocol', 'tls_weak_cipher'))
+          OR (${table.category} = 'dependency' AND ${table.code} IN ('dependency_vulnerable_package'))
+          OR (${table.category} = 'hndl' AND ${table.code} IN ('hndl_exposure'))`,
     ),
   ],
 );
