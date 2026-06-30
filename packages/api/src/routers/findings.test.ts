@@ -186,6 +186,134 @@ describe("findings router browse contract", () => {
   });
 });
 
+describe("findings router get contract", () => {
+  beforeEach(() => {
+    selectMock.mockReset();
+  });
+
+  it("returns not found for cross-tenant or missing scan without leaking evidence", async () => {
+    const limitSpy = vi.fn().mockResolvedValue([]);
+    const whereSpy = vi.fn().mockReturnValue({ limit: limitSpy });
+
+    selectMock.mockReturnValueOnce({
+      from: () => ({
+        where: whereSpy,
+      }),
+    });
+
+    await expect(
+      createCaller("user-1").get({ scanId: "scan-other-tenant", findingId: "finding-cert" }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Scan not found",
+    } satisfies Partial<TRPCError>);
+
+    expect(selectMock).toHaveBeenCalledTimes(1);
+    expect(whereSpy).toHaveBeenCalledTimes(1);
+    expect(limitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("returns bad request when scan is not completed", async () => {
+    selectMock.mockReturnValueOnce(
+      selectLimitRows([
+        {
+          id: "scan-1",
+          status: "running",
+          completedAt: null,
+        },
+      ]),
+    );
+
+    await expect(
+      createCaller("user-1").get({ scanId: "scan-1", findingId: "finding-cert" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Findings are available only after a scan completes.",
+    } satisfies Partial<TRPCError>);
+
+    expect(selectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns not found when finding is not in the completed scan snapshot", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
+      .mockReturnValueOnce(selectLimitRows([snapshotRow("scan-1", "snapshot-1")]))
+      .mockReturnValueOnce(selectGetFindingRows([]));
+
+    await expect(
+      createCaller("user-1").get({ scanId: "scan-1", findingId: "finding-missing" }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Finding not found",
+    } satisfies Partial<TRPCError>);
+
+    expect(selectMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns hydrated finding detail with projected evidence for a completed scan", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
+      .mockReturnValueOnce(selectLimitRows([snapshotRow("scan-1", "snapshot-1")]))
+      .mockReturnValueOnce(selectGetFindingRows([listRows()[0]!]));
+
+    const result = await createCaller("user-1").get({
+      scanId: "scan-1",
+      findingId: "finding-cert",
+    });
+
+    expect(result.scan).toMatchObject({
+      id: "scan-1",
+      status: "completed",
+    });
+    expect(result.snapshot).toMatchObject({
+      id: "snapshot-1",
+    });
+    expect(result.finding).toEqual(
+      expect.objectContaining({
+        id: "finding-cert",
+        snapshotId: "snapshot-1",
+        assetIdentifier: "CN=example.com",
+        connectorDisplayName: "GitHub snapshot",
+        sourceRef: "repo/cert.pem",
+        rationale: "Certificate expired yesterday.",
+        evidence: expect.objectContaining({
+          locator: "s3://evidence/cert",
+          redacted: true,
+          redaction: expect.objectContaining({
+            fields: ["privateKey"],
+          }),
+        }),
+      }),
+    );
+    expect(result.finding.evidence).not.toHaveProperty("metadata");
+  });
+
+  it("returns the same payload shape for two authorized users in the same tenant", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
+      .mockReturnValueOnce(selectLimitRows([snapshotRow("scan-1", "snapshot-1")]))
+      .mockReturnValueOnce(selectGetFindingRows([listRows()[0]!]));
+
+    const userOneResult = await createCaller("user-1").get({
+      scanId: "scan-1",
+      findingId: "finding-cert",
+    });
+
+    selectMock.mockReset();
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([scanJobRow("scan-1")]))
+      .mockReturnValueOnce(selectLimitRows([snapshotRow("scan-1", "snapshot-1")]))
+      .mockReturnValueOnce(selectGetFindingRows([listRows()[0]!]));
+
+    const userTwoResult = await createCaller("user-2").get({
+      scanId: "scan-1",
+      findingId: "finding-cert",
+    });
+
+    expect(userOneResult).toEqual(userTwoResult);
+  });
+});
+
 function createCaller(userId: string) {
   return findingsRouter.createCaller({
     auth: null,
@@ -316,6 +444,20 @@ function selectListRows(rows: unknown[]) {
       innerJoin: () => ({
         where: () => ({
           orderBy: orderBySpy,
+        }),
+      }),
+    }),
+  };
+}
+
+function selectGetFindingRows(rows: unknown[]) {
+  const limitSpy = vi.fn().mockResolvedValue(rows);
+
+  return {
+    from: () => ({
+      innerJoin: () => ({
+        where: () => ({
+          limit: limitSpy,
         }),
       }),
     }),

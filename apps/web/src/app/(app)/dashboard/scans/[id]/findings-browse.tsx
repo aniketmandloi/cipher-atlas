@@ -1,6 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import NextLink from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+type Href = Parameters<typeof NextLink>[0]["href"];
 
 import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Button } from "@cipher-atlas/ui/components/motion";
@@ -10,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { trpc } from "@/utils/trpc";
 import { formatDate, type CoverageOverall } from "../scans-utils";
+import { assetClassLabel, categoryLabel } from "./findings-labels";
 
 interface Props {
   scanId: string;
@@ -32,34 +38,44 @@ const CATEGORY_CARDS: Array<{
   { key: "hndl", label: "HNDL", description: "Harvest-now-decrypt-later exposure" },
 ];
 
-function categoryLabel(category: string): string {
-  switch (category) {
-    case "certificate":
-      return "Certificate";
-    case "tls":
-      return "TLS";
-    case "dependency":
-      return "Dependency";
-    case "hndl":
-      return "HNDL";
-    default:
-      return category;
-  }
+function buildFilterQueryString(filters: {
+  category: CategoryFilter;
+  source: SourceFilter;
+  assetClass: AssetClassFilter;
+}): string {
+  const params = new URLSearchParams();
+  if (filters.category !== "all") params.set("category", filters.category);
+  if (filters.source !== "all") params.set("source", filters.source);
+  if (filters.assetClass !== "all") params.set("assetClass", filters.assetClass);
+  return params.toString();
 }
 
-function assetClassLabel(assetClass: string): string {
-  switch (assetClass) {
-    case "certificate":
-      return "Certificate";
-    case "tls_config":
-      return "TLS Config";
-    case "dependency":
-      return "Dependency";
-    case "hndl_signal":
-      return "HNDL Signal";
-    default:
-      return assetClass;
-  }
+function readBrowseFilters(searchParams: Pick<URLSearchParams, "get">): {
+  category: CategoryFilter;
+  source: SourceFilter;
+  assetClass: AssetClassFilter;
+} {
+  const category = searchParams.get("category");
+  const source = searchParams.get("source");
+  const assetClass = searchParams.get("assetClass");
+
+  return {
+    category:
+      category === "certificate" ||
+      category === "tls" ||
+      category === "dependency" ||
+      category === "hndl"
+        ? category
+        : "all",
+    source: source === "github" || source === "aws" ? source : "all",
+    assetClass:
+      assetClass === "certificate" ||
+      assetClass === "tls_config" ||
+      assetClass === "dependency" ||
+      assetClass === "hndl_signal"
+        ? assetClass
+        : "all",
+  };
 }
 
 function FilterButton({
@@ -85,10 +101,29 @@ function FilterButton({
 }
 
 export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [assetClassFilter, setAssetClassFilter] = useState<AssetClassFilter>("all");
+  const searchParams = useSearchParams();
+  const urlFilters = readBrowseFilters(searchParams);
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(urlFilters.category);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(urlFilters.source);
+  const [assetClassFilter, setAssetClassFilter] = useState<AssetClassFilter>(urlFilters.assetClass);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nextFilters = readBrowseFilters(searchParams);
+    setCategoryFilter(nextFilters.category);
+    setSourceFilter(nextFilters.source);
+    setAssetClassFilter(nextFilters.assetClass);
+  }, [searchParams]);
+
+  const filterQueryString = useMemo(
+    () =>
+      buildFilterQueryString({
+        category: categoryFilter,
+        source: sourceFilter,
+        assetClass: assetClassFilter,
+      }),
+    [categoryFilter, sourceFilter, assetClassFilter],
+  );
 
   const queryInput = useMemo(
     () => ({
@@ -297,6 +332,9 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
             ) : (
               items.map((item) => {
                 const selected = selectedFindingId === item.id;
+                const detailHref = `/dashboard/scans/${scanId}/findings/${item.id}${
+                  filterQueryString ? `?${filterQueryString}` : ""
+                }` as Href;
                 return (
                   <Card
                     key={item.id}
@@ -326,6 +364,14 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                           {item.rationale}
                         </p>
                       </button>
+                      <div className="mt-3">
+                        <Link
+                          href={detailHref}
+                          className="text-xs text-muted-foreground underline hover:text-foreground"
+                        >
+                          Open detail
+                        </Link>
+                      </div>
                     </CardContent>
                   </Card>
                 );
@@ -413,6 +459,18 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
                         </p>
                       </div>
                     )}
+                    <div className="border-t pt-3">
+                      <Link
+                        href={
+                          `/dashboard/scans/${scanId}/findings/${selectedFinding.id}${
+                            filterQueryString ? `?${filterQueryString}` : ""
+                          }` as Href
+                        }
+                        className="text-xs text-muted-foreground underline hover:text-foreground"
+                      >
+                        Open full detail
+                      </Link>
+                    </div>
                   </div>
                 )}
               </CardContent>
