@@ -141,8 +141,9 @@ function deriveDependencyFindings(asset: AssetRecord, now: Date): Finding[] {
   const packageName = firstString(metadata, ["packageName", "package", "name"]);
   const packageVersion = firstString(metadata, ["packageVersion", "version"]);
   const vulnerabilityId = firstString(metadata, ["vulnerabilityId", "advisoryId", "cveId", "cve"]);
+  const manifestSource = firstString(metadata, ["manifestSource"]);
 
-  if (!hasVulnerablePackageExposure(packageName, vulnerabilityId)) {
+  if (!hasVulnerablePackageExposure(packageName, packageVersion, vulnerabilityId)) {
     return [];
   }
 
@@ -152,10 +153,11 @@ function deriveDependencyFindings(asset: AssetRecord, now: Date): Finding[] {
       : packageName
     : vulnerabilityId ?? "unknown package";
 
-  const manifestRef = asset.sourceRef;
+  const repositoryRef = asset.sourceRef;
   const locator = asset.evidence.locator;
-  const advisoryText = vulnerabilityId ? ` Advisory ${vulnerabilityId} indicates` : " Launch policy flags";
-  const rationale = `${advisoryText} cryptography-relevant exposure in ${packageLabel} from manifest at ${manifestRef}. Evidence locator: ${locator}.`;
+  const manifestLabel = manifestSource ? `manifest ${manifestSource}` : "manifest";
+  const advisoryText = vulnerabilityId ? `Advisory ${vulnerabilityId} indicates` : "Launch policy flags";
+  const rationale = `${advisoryText} cryptography-relevant exposure in ${packageLabel} from ${manifestLabel} in repository ${repositoryRef}. Evidence locator: ${locator}.`;
 
   return [
     finding(asset, {
@@ -188,12 +190,16 @@ function deriveHndlFindings(asset: AssetRecord, now: Date): Finding[] {
   ];
 }
 
-function hasVulnerablePackageExposure(packageName: string | null, vulnerabilityId: string | null): boolean {
+function hasVulnerablePackageExposure(
+  packageName: string | null,
+  packageVersion: string | null,
+  vulnerabilityId: string | null,
+): boolean {
   if (vulnerabilityId) {
     return true;
   }
 
-  if (!packageName) {
+  if (!packageName || !packageVersion) {
     return false;
   }
 
@@ -210,7 +216,7 @@ function findMatchedHndlHeuristic(metadata: Record<string, unknown>): string | n
 
   for (const marker of hndlHeuristicMarkers) {
     const value = metadata[marker];
-    if (value === true || value === "true" || value === 1) {
+    if (isTruthyMetadataValue(value)) {
       return marker;
     }
   }
@@ -228,6 +234,18 @@ function matchesHndlHeuristic(value: string): boolean {
 
 function formatHndlHeuristicLabel(heuristic: string): string {
   return heuristic.replace(/_/g, " ");
+}
+
+function isTruthyMetadataValue(value: unknown): boolean {
+  if (value === true || value === 1) {
+    return true;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().toLowerCase() === "true";
+  }
+
+  return false;
 }
 
 function finding(

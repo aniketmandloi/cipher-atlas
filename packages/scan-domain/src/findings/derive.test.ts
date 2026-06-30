@@ -137,8 +137,29 @@ describe("deriveFindings", () => {
       }),
     );
     expect(findings[0]?.rationale).toContain("openssl@1.1.1k");
-    expect(findings[0]?.rationale).toContain("github:connector-repo");
+    expect(findings[0]?.rationale).toContain("manifest package-lock.json");
+    expect(findings[0]?.rationale).toContain("repository github:connector-repo");
     expect(JSON.stringify(findings)).not.toContain("ghp_1234567890abcdefghijklmnop");
+  });
+
+  it("skips dependency assets with package markers but no version or advisory", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-dep-no-version",
+          assetClass: "dependency",
+          evidence: evidence({
+            metadata: {
+              packageName: "openssl",
+              manifestSource: "package-lock.json",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toEqual([]);
   });
 
   it("derives HNDL findings when a launch heuristic marker is present", () => {
@@ -174,6 +195,27 @@ describe("deriveFindings", () => {
     expect(findings[0]?.rationale).toContain("harvest-now-decrypt-later");
   });
 
+  it("derives HNDL findings from padded or differently-cased true string markers", () => {
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-hndl-string",
+          assetClass: "hndl_signal",
+          evidence: evidence({
+            metadata: {
+              archive_encryption: " True ",
+            },
+          }),
+        }),
+      ],
+      { now: new Date("2026-06-29T12:00:00.000Z") },
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe("hndl_exposure");
+    expect(findings[0]?.rationale).toContain("archive encryption");
+  });
+
   it("derives dependency findings from explicit vulnerability identifiers", () => {
     const findings = deriveFindings(
       [
@@ -194,6 +236,7 @@ describe("deriveFindings", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe("dependency_vulnerable_package");
     expect(findings[0]?.rationale).toContain("CVE-2024-1234");
+    expect(findings[0]?.rationale).toContain("manifest requirements.txt");
   });
 
   it("returns byte-identical output for the same assets and clock", () => {
