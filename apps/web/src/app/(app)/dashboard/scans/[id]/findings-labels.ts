@@ -63,5 +63,16 @@ export function replacementPriorityLabel(priority: string | null): string {
     return "No replacement priority";
   }
 
-  return priority;
+  switch (priority) {
+    case "P1":
+      return "Priority 1";
+    case "P2":
+      return "Priority 2";
+    case "P3":
+      return "Priority 3";
+    case "P4":
+      return "Priority 4";
+    default:
+      return priority;
+  }
 }

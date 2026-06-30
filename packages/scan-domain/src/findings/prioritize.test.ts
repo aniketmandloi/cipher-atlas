@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { findingCodes } from "./contracts";
-import { applyPrioritization, compareFindingsByPriority, prioritizeFinding } from "./prioritize";
+import { findingCodes, replacementPriorities, riskLevels } from "./contracts";
+import {
+  applyPrioritization,
+  compareFindingsByPriority,
+  prioritizeFinding,
+  replacementPriorityRankValue,
+  riskLevelRankValue,
+} from "./prioritize";
 import type { Finding } from "./contracts";
 
 describe("prioritizeFinding", () => {
@@ -20,7 +26,23 @@ describe("prioritizeFinding", () => {
     for (const code of findingCodes) {
       const result = prioritizeFinding(code);
       expect(result.riskLevel).toBeTruthy();
-      expect(result.replacementPriority).toMatch(/^P[1-3]$/);
+      expect(result.replacementPriority).toBeDefined();
+      expect(result.replacementPriority).not.toBeNull();
+      expect(result.replacementPriority).toMatch(/^P[1-4]$/);
+    }
+  });
+
+  it("keeps storage enum declaration order aligned with domain sort ranks", () => {
+    for (let index = 1; index < riskLevels.length; index += 1) {
+      const previous = riskLevels[index - 1]!;
+      const current = riskLevels[index]!;
+      expect(riskLevelRankValue(current)).toBeGreaterThan(riskLevelRankValue(previous));
+    }
+
+    for (let index = 1; index < replacementPriorities.length; index += 1) {
+      const previous = replacementPriorities[index - 1]!;
+      const current = replacementPriorities[index]!;
+      expect(replacementPriorityRankValue(current)).toBeGreaterThan(replacementPriorityRankValue(previous));
     }
   });
 });

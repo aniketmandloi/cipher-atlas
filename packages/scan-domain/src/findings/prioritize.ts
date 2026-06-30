@@ -19,12 +19,21 @@ const riskLevelRank: Record<RiskLevel, number> = {
   low: 3,
 };
 
+// P4 is reserved for future actionable findings; the launch matrix only assigns P1–P3 today.
 const replacementPriorityRank: Record<ReplacementPriority, number> = {
   P1: 0,
   P2: 1,
   P3: 2,
   P4: 3,
 };
+
+export function riskLevelRankValue(level: RiskLevel): number {
+  return riskLevelRank[level];
+}
+
+export function replacementPriorityRankValue(priority: ReplacementPriority): number {
+  return replacementPriorityRank[priority];
+}
 
 export function prioritizeFinding(code: FindingCode): {
   riskLevel: RiskLevel;

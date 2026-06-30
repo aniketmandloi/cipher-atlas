@@ -277,6 +277,8 @@ export const findingsRouter = router({
       .from(finding)
       .innerJoin(asset, eq(finding.assetId, asset.id))
       .where(and(...filterConditions))
+      // Enum asc() relies on Postgres declaration order matching scan-domain rank order;
+      // see prioritize.test.ts "keeps storage enum declaration order aligned with domain sort ranks".
       .orderBy(
         asc(finding.riskLevel),
         asc(finding.replacementPriority),
