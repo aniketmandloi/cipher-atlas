@@ -14,11 +14,13 @@
     "test": "vitest run --maxWorkers=1 --exclude=dist/**"
   },
   "dependencies": {
+    "pdfkit": "^0.17.2",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@cipher-atlas/config": "workspace:*",
     "@types/node": "^22.13.14",
+    "@types/pdfkit": "^0.17.3",
     "typescript": "catalog:",
     "vitest": "^4.1.9"
   }
