@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { TRPCError } from "@trpc/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 const { selectMock, insertMock, loadCoverageMock, renderReportPdfMock, renderReportCsvMock } = vi.hoisted(() => ({
   selectMock: vi.fn(),
@@ -312,11 +312,17 @@ describe("reports router generateCsv", () => {
 
 describe("reports router retention enforcement", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(baseDate);
     selectMock.mockReset();
     insertMock.mockReset();
     loadCoverageMock.mockReset();
     renderReportPdfMock.mockReset();
     renderReportCsvMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("rejects generatePdf when the snapshot is past retention", async () => {
@@ -382,7 +388,13 @@ describe("reports router retention enforcement", () => {
 
 describe("reports router listArtifacts", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(baseDate);
     selectMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("returns not found for missing or cross-tenant scan ids", async () => {
@@ -435,7 +447,6 @@ describe("reports router listArtifacts", () => {
           },
         ]),
       )
-      .mockReturnValueOnce(selectWhereRows([{ displayName: "GitHub Prod" }]))
       .mockReturnValueOnce(selectArtifactHistoryRows([]));
 
     const result = await createCaller("user-1").listArtifacts({ scanId: "scan-1" });
@@ -493,7 +504,6 @@ describe("reports router listArtifacts", () => {
           },
         ]),
       )
-      .mockReturnValueOnce(selectWhereRows([{ displayName: "GitHub Prod" }]))
       .mockReturnValueOnce({
         from: () => ({
           innerJoin: () => ({

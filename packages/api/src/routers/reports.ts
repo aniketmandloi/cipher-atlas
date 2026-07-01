@@ -46,7 +46,13 @@ function csvFileName(scanId: string): string {
   return `cipher-atlas-findings-${shortScanId(scanId)}.csv`;
 }
 
-async function resolveCompletedScanContext(scanId: string, tenantId: string) {
+async function resolveCompletedScanContext(
+  scanId: string,
+  tenantId: string,
+  options: { loadConnectors?: boolean; now?: Date } = {},
+) {
+  const requestNow = options.now ?? new Date();
+
   const [scanRow] = await db
     .select({
       id: scanJob.id,
@@ -89,19 +95,22 @@ async function resolveCompletedScanContext(scanId: string, tenantId: string) {
     });
   }
 
-  if (!isWithinRetention(snapshotRow.publishedAt, new Date())) {
+  if (!isWithinRetention(snapshotRow.publishedAt, requestNow)) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: RETENTION_ELAPSED_MESSAGE,
     });
   }
 
-  const connectorRows = await db
-    .select({ displayName: scanJobConnector.displayName })
-    .from(scanJobConnector)
-    .where(and(eq(scanJobConnector.scanJobId, scanId), eq(scanJobConnector.tenantId, tenantId)));
+  let connectorRows: { displayName: string }[] = [];
+  if (options.loadConnectors !== false) {
+    connectorRows = await db
+      .select({ displayName: scanJobConnector.displayName })
+      .from(scanJobConnector)
+      .where(and(eq(scanJobConnector.scanJobId, scanId), eq(scanJobConnector.tenantId, tenantId)));
+  }
 
-  return { scanRow, snapshotRow, connectorRows };
+  return { scanRow, snapshotRow, connectorRows, now: requestNow };
 }
 
 async function loadReportFindingRows(
@@ -341,8 +350,9 @@ export const reportsRouter = router({
 
   listArtifacts: protectedProcedure.input(listArtifactsInputSchema).query(async ({ ctx, input }) => {
     const tenantId = tenantScope(ctx.session.user.id);
-    const { snapshotRow } = await resolveCompletedScanContext(input.scanId, tenantId);
-    const now = new Date();
+    const { snapshotRow, now } = await resolveCompletedScanContext(input.scanId, tenantId, {
+      loadConnectors: false,
+    });
     const snapshotRetainedUntil = computeRetainedUntil(snapshotRow.publishedAt);
     const snapshotWithinRetention = isWithinRetention(snapshotRow.publishedAt, now);
 

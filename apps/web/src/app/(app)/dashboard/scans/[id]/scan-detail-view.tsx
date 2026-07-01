@@ -294,7 +294,9 @@ export default function ScanDetailView({ scanId }: Props) {
                 <p className="text-sm text-muted-foreground">Loading report history…</p>
               )}
               {artifactsQuery.isError && (
-                <p className="text-sm text-destructive">Failed to load report history.</p>
+                <p className="text-sm text-destructive">
+                  {artifactsQuery.error.message || "Failed to load report history."}
+                </p>
               )}
               {artifactsQuery.data && (
                 <>
@@ -341,10 +343,10 @@ export default function ScanDetailView({ scanId }: Props) {
                               {artifact.format === "pdf"
                                 ? exportPdfMutation.isPending
                                   ? "Generating…"
-                                  : "Re-download PDF"
+                                  : "Regenerate PDF"
                                 : exportCsvMutation.isPending
                                   ? "Generating…"
-                                  : "Re-download CSV"}
+                                  : "Regenerate CSV"}
                             </Button>
                           </CardContent>
                         </Card>
