@@ -1,18 +1,21 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { db } from "@cipher-atlas/db";
+import { user } from "@cipher-atlas/db/schema/auth";
 import { finding } from "@cipher-atlas/db/schema/finding";
 import { asset, scanSnapshot } from "@cipher-atlas/db/schema/inventory";
 import { reportArtifact } from "@cipher-atlas/db/schema/report";
 import { scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
 import {
   buildReportModel,
+  computeRetainedUntil,
+  isWithinRetention,
   renderReportCsv,
   renderReportPdf,
   REPORT_FINDINGS_TABLE_CAP,
 } from "@cipher-atlas/scan-domain";
 import { TRPCError } from "@trpc/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
@@ -23,6 +26,13 @@ import { buildFacetCounts, projectEvidence } from "./findings";
 const generateReportInputSchema = z.object({
   scanId: z.string().min(1),
 });
+
+const listArtifactsInputSchema = z.object({
+  scanId: z.string().min(1),
+});
+
+const RETENTION_ELAPSED_MESSAGE =
+  "This scan's retention window has elapsed and its report is no longer available.";
 
 function shortScanId(scanId: string): string {
   return scanId.length > 8 ? scanId.slice(0, 8) : scanId;
@@ -36,7 +46,13 @@ function csvFileName(scanId: string): string {
   return `cipher-atlas-findings-${shortScanId(scanId)}.csv`;
 }
 
-async function resolveCompletedScanContext(scanId: string, tenantId: string) {
+async function resolveCompletedScanContext(
+  scanId: string,
+  tenantId: string,
+  options: { loadConnectors?: boolean; now?: Date } = {},
+) {
+  const requestNow = options.now ?? new Date();
+
   const [scanRow] = await db
     .select({
       id: scanJob.id,
@@ -79,12 +95,22 @@ async function resolveCompletedScanContext(scanId: string, tenantId: string) {
     });
   }
 
-  const connectorRows = await db
-    .select({ displayName: scanJobConnector.displayName })
-    .from(scanJobConnector)
-    .where(and(eq(scanJobConnector.scanJobId, scanId), eq(scanJobConnector.tenantId, tenantId)));
+  if (!isWithinRetention(snapshotRow.publishedAt, requestNow)) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: RETENTION_ELAPSED_MESSAGE,
+    });
+  }
 
-  return { scanRow, snapshotRow, connectorRows };
+  let connectorRows: { displayName: string }[] = [];
+  if (options.loadConnectors !== false) {
+    connectorRows = await db
+      .select({ displayName: scanJobConnector.displayName })
+      .from(scanJobConnector)
+      .where(and(eq(scanJobConnector.scanJobId, scanId), eq(scanJobConnector.tenantId, tenantId)));
+  }
+
+  return { scanRow, snapshotRow, connectorRows, now: requestNow };
 }
 
 async function loadReportFindingRows(
@@ -319,6 +345,53 @@ export const reportsRouter = router({
       fileName: csvFileName(scanRow.id),
       contentType: "text/csv; charset=utf-8" as const,
       base64: csvBuffer.toString("base64"),
+    };
+  }),
+
+  listArtifacts: protectedProcedure.input(listArtifactsInputSchema).query(async ({ ctx, input }) => {
+    const tenantId = tenantScope(ctx.session.user.id);
+    const { snapshotRow, now } = await resolveCompletedScanContext(input.scanId, tenantId, {
+      loadConnectors: false,
+    });
+    const snapshotRetainedUntil = computeRetainedUntil(snapshotRow.publishedAt);
+    const snapshotWithinRetention = isWithinRetention(snapshotRow.publishedAt, now);
+
+    const artifactRows = await db
+      .select({
+        format: reportArtifact.format,
+        byteSize: reportArtifact.byteSize,
+        checksumSha256: reportArtifact.checksumSha256,
+        generatedAt: reportArtifact.generatedAt,
+        generatedByUserId: reportArtifact.generatedByUserId,
+        createdAt: reportArtifact.createdAt,
+        userName: user.name,
+      })
+      .from(reportArtifact)
+      .innerJoin(user, eq(reportArtifact.generatedByUserId, user.id))
+      .where(
+        and(eq(reportArtifact.snapshotId, snapshotRow.id), eq(reportArtifact.tenantId, tenantId)),
+      )
+      .orderBy(asc(reportArtifact.format), desc(reportArtifact.generatedAt));
+
+    return {
+      snapshot: {
+        snapshotId: snapshotRow.id,
+        publishedAt: snapshotRow.publishedAt,
+        assetCount: snapshotRow.assetCount,
+        retainedUntil: snapshotRetainedUntil,
+        withinRetention: snapshotWithinRetention,
+      },
+      artifacts: artifactRows.map((row) => ({
+        format: row.format,
+        byteSize: row.byteSize,
+        checksumSha256: row.checksumSha256,
+        generatedAt: row.generatedAt,
+        generatedByUserId: row.generatedByUserId,
+        generatedByName: row.userName?.trim() || row.generatedByUserId,
+        createdAt: row.createdAt,
+        retainedUntil: snapshotRetainedUntil,
+        withinRetention: snapshotWithinRetention,
+      })),
     };
   }),
 });
