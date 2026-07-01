@@ -377,7 +377,7 @@ export const reportsRouter = router({
         checksumSha256: row.checksumSha256,
         generatedAt: row.generatedAt,
         generatedByUserId: row.generatedByUserId,
-        generatedByName: row.userName ?? row.generatedByUserId,
+        generatedByName: row.userName?.trim() || row.generatedByUserId,
         createdAt: row.createdAt,
         retainedUntil: snapshotRetainedUntil,
         withinRetention: snapshotWithinRetention,

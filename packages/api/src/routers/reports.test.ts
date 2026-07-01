@@ -453,9 +453,9 @@ describe("reports router listArtifacts", () => {
 
   it("returns artifacts with retention metadata and tenant-scoped filtering", async () => {
     const artifactGeneratedAt = new Date("2026-06-30T08:00:00.000Z");
-    const whereSpy = vi.fn().mockResolvedValue([
+    const artifactRows = [
       {
-        format: "csv",
+        format: "csv" as const,
         byteSize: 2048,
         checksumSha256: "csv-checksum",
         generatedAt: artifactGeneratedAt,
@@ -464,15 +464,22 @@ describe("reports router listArtifacts", () => {
         userName: "Test User",
       },
       {
-        format: "pdf",
+        format: "pdf" as const,
         byteSize: 4096,
         checksumSha256: "pdf-checksum",
         generatedAt: baseDate,
         generatedByUserId: "user-1",
         createdAt: baseDate,
-        userName: "Test User",
+        userName: "",
       },
-    ]);
+    ];
+    let capturedWhereCondition: unknown;
+    const whereSpy = vi.fn((condition) => {
+      capturedWhereCondition = condition;
+      return {
+        orderBy: vi.fn().mockResolvedValue(artifactRows),
+      };
+    });
 
     selectMock
       .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
@@ -490,28 +497,7 @@ describe("reports router listArtifacts", () => {
       .mockReturnValueOnce({
         from: () => ({
           innerJoin: () => ({
-            where: whereSpy.mockReturnValue({
-              orderBy: vi.fn().mockResolvedValue([
-                {
-                  format: "csv",
-                  byteSize: 2048,
-                  checksumSha256: "csv-checksum",
-                  generatedAt: artifactGeneratedAt,
-                  generatedByUserId: "user-1",
-                  createdAt: artifactGeneratedAt,
-                  userName: "Test User",
-                },
-                {
-                  format: "pdf",
-                  byteSize: 4096,
-                  checksumSha256: "pdf-checksum",
-                  generatedAt: baseDate,
-                  generatedByUserId: "user-1",
-                  createdAt: baseDate,
-                  userName: "Test User",
-                },
-              ]),
-            }),
+            where: whereSpy,
           }),
         }),
       });
@@ -519,6 +505,8 @@ describe("reports router listArtifacts", () => {
     const result = await createCaller("user-1").listArtifacts({ scanId: "scan-1" });
 
     expect(whereSpy).toHaveBeenCalledTimes(1);
+    expect(sqlConditionContainsValue(capturedWhereCondition, "user-1")).toBe(true);
+    expect(sqlConditionContainsValue(capturedWhereCondition, "snapshot-1")).toBe(true);
     expect(result.artifacts).toHaveLength(2);
     expect(result.artifacts[0]).toEqual(
       expect.objectContaining({
@@ -528,8 +516,13 @@ describe("reports router listArtifacts", () => {
         withinRetention: true,
       }),
     );
+    expect(result.artifacts[1]).toEqual(
+      expect.objectContaining({
+        format: "pdf",
+        generatedByName: "user-1",
+      }),
+    );
     expect(result.artifacts[0]).not.toHaveProperty("tenantId");
-    expect(JSON.stringify(result)).not.toContain("must-not-leak");
   });
 });
 
@@ -681,4 +674,19 @@ function selectArtifactHistoryRows(rows: unknown[]) {
       }),
     }),
   };
+}
+
+function sqlConditionContainsValue(
+  value: unknown,
+  target: string,
+  seen = new WeakSet<object>(),
+): boolean {
+  if (value === target) return true;
+  if (value == null || typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.some((item) => sqlConditionContainsValue(item, target, seen));
+  }
+  return Object.values(value).some((item) => sqlConditionContainsValue(item, target, seen));
 }

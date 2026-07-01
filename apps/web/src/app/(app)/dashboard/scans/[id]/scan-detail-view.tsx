@@ -130,8 +130,8 @@ export default function ScanDetailView({ scanId }: Props) {
   async function handleExportPdf() {
     try {
       const result = await exportPdfMutation.mutateAsync({ scanId });
-      await downloadReport(result);
       invalidateReportHistory();
+      await downloadReport(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to export PDF report.";
       toast.error(message);
@@ -143,8 +143,8 @@ export default function ScanDetailView({ scanId }: Props) {
   async function handleExportCsv() {
     try {
       const result = await exportCsvMutation.mutateAsync({ scanId });
-      await downloadReport(result);
       invalidateReportHistory();
+      await downloadReport(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to export CSV report.";
       toast.error(message);
