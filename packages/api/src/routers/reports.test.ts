@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,6 +35,10 @@ vi.mock("@cipher-atlas/scan-domain", async (importOriginal) => {
 import { reportsRouter } from "./reports";
 
 const baseDate = new Date("2026-06-29T12:00:00.000Z");
+const expiredPublishedAt = new Date("2024-01-01T00:00:00.000Z");
+
+const RETENTION_ELAPSED_MESSAGE =
+  "This scan's retention window has elapsed and its report is no longer available.";
 
 describe("reports router generatePdf", () => {
   beforeEach(() => {
@@ -303,6 +310,239 @@ describe("reports router generateCsv", () => {
   });
 });
 
+describe("reports router retention enforcement", () => {
+  beforeEach(() => {
+    selectMock.mockReset();
+    insertMock.mockReset();
+    loadCoverageMock.mockReset();
+    renderReportPdfMock.mockReset();
+    renderReportCsvMock.mockReset();
+  });
+
+  it("rejects generatePdf when the snapshot is past retention", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(
+        selectLimitRows([
+          {
+            id: "snapshot-1",
+            scanAttemptId: "attempt-1",
+            publishedAt: expiredPublishedAt,
+            assetCount: 2,
+          },
+        ]),
+      );
+
+    await expect(createCaller("user-1").generatePdf({ scanId: "scan-1" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: RETENTION_ELAPSED_MESSAGE,
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("rejects generateCsv when the snapshot is past retention", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(
+        selectLimitRows([
+          {
+            id: "snapshot-1",
+            scanAttemptId: "attempt-1",
+            publishedAt: expiredPublishedAt,
+            assetCount: 2,
+          },
+        ]),
+      );
+
+    await expect(createCaller("user-1").generateCsv({ scanId: "scan-1" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: RETENTION_ELAPSED_MESSAGE,
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("rejects listArtifacts when the snapshot is past retention", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(
+        selectLimitRows([
+          {
+            id: "snapshot-1",
+            scanAttemptId: "attempt-1",
+            publishedAt: expiredPublishedAt,
+            assetCount: 2,
+          },
+        ]),
+      );
+
+    await expect(createCaller("user-1").listArtifacts({ scanId: "scan-1" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: RETENTION_ELAPSED_MESSAGE,
+    } satisfies Partial<TRPCError>);
+  });
+});
+
+describe("reports router listArtifacts", () => {
+  beforeEach(() => {
+    selectMock.mockReset();
+  });
+
+  it("returns not found for missing or cross-tenant scan ids", async () => {
+    selectMock.mockReturnValueOnce(selectLimitRows([]));
+
+    await expect(createCaller("user-1").listArtifacts({ scanId: "scan-other-tenant" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Scan not found",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("returns bad request for a non-completed scan", async () => {
+    selectMock.mockReturnValueOnce(
+      selectLimitRows([
+        {
+          id: "scan-1",
+          status: "running",
+          completedAt: null,
+        },
+      ]),
+    );
+
+    await expect(createCaller("user-1").listArtifacts({ scanId: "scan-1" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "A report can be exported only after a scan completes.",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("returns not found for a completed scan with no snapshot", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(selectLimitRows([]));
+
+    await expect(createCaller("user-1").listArtifacts({ scanId: "scan-1" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Scan snapshot not found",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("returns an empty artifact list for a completed scan with no generated reports", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(
+        selectLimitRows([
+          {
+            id: "snapshot-1",
+            scanAttemptId: "attempt-1",
+            publishedAt: baseDate,
+            assetCount: 2,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(selectWhereRows([{ displayName: "GitHub Prod" }]))
+      .mockReturnValueOnce(selectArtifactHistoryRows([]));
+
+    const result = await createCaller("user-1").listArtifacts({ scanId: "scan-1" });
+
+    expect(result.artifacts).toEqual([]);
+    expect(result.snapshot).toEqual(
+      expect.objectContaining({
+        snapshotId: "snapshot-1",
+        assetCount: 2,
+        withinRetention: true,
+      }),
+    );
+    expect(result.snapshot.retainedUntil).toBeInstanceOf(Date);
+  });
+
+  it("returns artifacts with retention metadata and tenant-scoped filtering", async () => {
+    const artifactGeneratedAt = new Date("2026-06-30T08:00:00.000Z");
+    const whereSpy = vi.fn().mockResolvedValue([
+      {
+        format: "csv",
+        byteSize: 2048,
+        checksumSha256: "csv-checksum",
+        generatedAt: artifactGeneratedAt,
+        generatedByUserId: "user-1",
+        createdAt: artifactGeneratedAt,
+        userName: "Test User",
+      },
+      {
+        format: "pdf",
+        byteSize: 4096,
+        checksumSha256: "pdf-checksum",
+        generatedAt: baseDate,
+        generatedByUserId: "user-1",
+        createdAt: baseDate,
+        userName: "Test User",
+      },
+    ]);
+
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(
+        selectLimitRows([
+          {
+            id: "snapshot-1",
+            scanAttemptId: "attempt-1",
+            publishedAt: baseDate,
+            assetCount: 2,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(selectWhereRows([{ displayName: "GitHub Prod" }]))
+      .mockReturnValueOnce({
+        from: () => ({
+          innerJoin: () => ({
+            where: whereSpy.mockReturnValue({
+              orderBy: vi.fn().mockResolvedValue([
+                {
+                  format: "csv",
+                  byteSize: 2048,
+                  checksumSha256: "csv-checksum",
+                  generatedAt: artifactGeneratedAt,
+                  generatedByUserId: "user-1",
+                  createdAt: artifactGeneratedAt,
+                  userName: "Test User",
+                },
+                {
+                  format: "pdf",
+                  byteSize: 4096,
+                  checksumSha256: "pdf-checksum",
+                  generatedAt: baseDate,
+                  generatedByUserId: "user-1",
+                  createdAt: baseDate,
+                  userName: "Test User",
+                },
+              ]),
+            }),
+          }),
+        }),
+      });
+
+    const result = await createCaller("user-1").listArtifacts({ scanId: "scan-1" });
+
+    expect(whereSpy).toHaveBeenCalledTimes(1);
+    expect(result.artifacts).toHaveLength(2);
+    expect(result.artifacts[0]).toEqual(
+      expect.objectContaining({
+        format: "csv",
+        byteSize: 2048,
+        generatedByName: "Test User",
+        withinRetention: true,
+      }),
+    );
+    expect(result.artifacts[0]).not.toHaveProperty("tenantId");
+    expect(JSON.stringify(result)).not.toContain("must-not-leak");
+  });
+});
+
+describe("distinct-run snapshot preservation", () => {
+  it("relies on a unique snapshot per scan job so each completed run stays distinct", () => {
+    const schemaSource = readFileSync(
+      resolve(import.meta.dirname, "../../../db/src/schema/inventory.ts"),
+      "utf8",
+    );
+    expect(schemaSource).toContain('uniqueIndex("scan_snapshot_scan_job_id_idx").on(table.scanJobId)');
+  });
+});
+
 function createCaller(userId: string) {
   return reportsRouter.createCaller({
     auth: null,
@@ -416,6 +656,20 @@ function selectOrderByRows(rows: unknown[]) {
 }
 
 function selectOrderByRowsWithoutLimit(rows: unknown[]) {
+  const orderBySpy = vi.fn().mockResolvedValue(rows);
+
+  return {
+    from: () => ({
+      innerJoin: () => ({
+        where: () => ({
+          orderBy: orderBySpy,
+        }),
+      }),
+    }),
+  };
+}
+
+function selectArtifactHistoryRows(rows: unknown[]) {
   const orderBySpy = vi.fn().mockResolvedValue(rows);
 
   return {
