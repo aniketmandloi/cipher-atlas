@@ -22,10 +22,12 @@
     "@neondatabase/serverless": "^1.0.2",
     "dotenv": "catalog:",
     "drizzle-orm": "catalog:",
+    "ws": "^8.18.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@cipher-atlas/config": "workspace:*",
+    "@types/ws": "^8.5.13",
     "drizzle-kit": "^0.31.8",
     "tsx": "^4.19.2",
     "typescript": "catalog:"
