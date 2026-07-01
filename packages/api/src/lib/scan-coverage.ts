@@ -7,7 +7,7 @@ import {
   type CoverageSummary,
   type RedactedCoverageSlice,
 } from "@cipher-atlas/scan-domain";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 type ScanAttemptRow = typeof scanAttempt.$inferSelect;
 type CoverageSliceRow = typeof coverageSlice.$inferSelect;
@@ -56,6 +56,24 @@ export function groupCoverageSlices(rows: CoverageSliceRow[]): Map<string, Cover
 export interface ScanCoveragePayload {
   coverageSlices: RedactedCoverageSlice[];
   coverageSummary: CoverageSummary;
+}
+
+export async function loadScanCoverageForAttempt(
+  scanJobId: string,
+  scanAttemptId: string,
+): Promise<ScanCoveragePayload> {
+  const sliceRows = await db
+    .select()
+    .from(coverageSlice)
+    .where(and(eq(coverageSlice.scanAttemptId, scanAttemptId), eq(coverageSlice.scanJobId, scanJobId)))
+    .orderBy(coverageSlice.connectorDisplayName, coverageSlice.id);
+
+  const redactedSlices = sliceRows.map(redactCoverageSlice);
+
+  return {
+    coverageSlices: redactedSlices,
+    coverageSummary: summarizeCoverage(sliceRows),
+  };
 }
 
 export async function loadScanCoverageForJob(scanJobId: string): Promise<ScanCoveragePayload> {

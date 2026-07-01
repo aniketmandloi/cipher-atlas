@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Button } from "@cipher-atlas/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
 import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
-import { useQuery } from "@tanstack/react-query";
 
 import { trpc } from "@/utils/trpc";
 import {
@@ -101,8 +100,13 @@ export default function ScanDetailView({ scanId }: Props) {
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = result.fileName;
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
       anchor.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(anchor);
+      window.setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 0);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to export PDF report.";
       toast.error(message);

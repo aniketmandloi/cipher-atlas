@@ -2,7 +2,9 @@ import PDFDocument from "pdfkit";
 
 import type { ReportModel } from "./contracts";
 
-const FINDINGS_TABLE_CAP = 50;
+export const REPORT_FINDINGS_TABLE_CAP = 50;
+
+const FINDINGS_TABLE_CAP = REPORT_FINDINGS_TABLE_CAP;
 
 const CATEGORY_LABELS: Record<ReportModel["findings"][number]["category"], string> = {
   certificate: "Certificates",

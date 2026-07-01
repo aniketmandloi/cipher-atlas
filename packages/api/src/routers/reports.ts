@@ -5,13 +5,13 @@ import { finding } from "@cipher-atlas/db/schema/finding";
 import { asset, scanSnapshot } from "@cipher-atlas/db/schema/inventory";
 import { reportArtifact } from "@cipher-atlas/db/schema/report";
 import { scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
-import { buildReportModel, renderReportPdf } from "@cipher-atlas/scan-domain";
+import { buildReportModel, renderReportPdf, REPORT_FINDINGS_TABLE_CAP } from "@cipher-atlas/scan-domain";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
-import { loadScanCoverageForJob } from "../lib/scan-coverage";
+import { loadScanCoverageForAttempt } from "../lib/scan-coverage";
 import { tenantScope } from "../tenant";
 import { buildFacetCounts, projectEvidence } from "./findings";
 
@@ -55,6 +55,7 @@ export const reportsRouter = router({
     const [snapshotRow] = await db
       .select({
         id: scanSnapshot.id,
+        scanAttemptId: scanSnapshot.scanAttemptId,
         publishedAt: scanSnapshot.publishedAt,
         assetCount: scanSnapshot.assetCount,
       })
@@ -110,9 +111,10 @@ export const reportsRouter = router({
         asc(finding.code),
         asc(finding.sourceRef),
         asc(finding.id),
-      );
+      )
+      .limit(REPORT_FINDINGS_TABLE_CAP);
 
-    const coverage = await loadScanCoverageForJob(input.scanId);
+    const coverage = await loadScanCoverageForAttempt(input.scanId, snapshotRow.scanAttemptId);
     const generatedAt = new Date();
 
     const reportModel = buildReportModel({

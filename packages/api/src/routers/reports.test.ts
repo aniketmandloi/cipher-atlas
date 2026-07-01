@@ -15,7 +15,7 @@ vi.mock("@cipher-atlas/db", () => ({
 }));
 
 vi.mock("../lib/scan-coverage", () => ({
-  loadScanCoverageForJob: loadCoverageMock,
+  loadScanCoverageForAttempt: loadCoverageMock,
 }));
 
 import { reportsRouter } from "./reports";
@@ -96,6 +96,7 @@ describe("reports router generatePdf", () => {
         selectLimitRows([
           {
             id: "snapshot-1",
+            scanAttemptId: "attempt-1",
             publishedAt: baseDate,
             assetCount: 2,
           },
@@ -122,6 +123,7 @@ describe("reports router generatePdf", () => {
       }),
     );
     expect(onConflictDoUpdate).toHaveBeenCalledTimes(1);
+    expect(loadCoverageMock).toHaveBeenCalledWith("scan-1", "attempt-1");
   });
 });
 
@@ -223,7 +225,9 @@ function selectWhereRows(rows: unknown[]) {
 }
 
 function selectOrderByRows(rows: unknown[]) {
-  const orderBySpy = vi.fn().mockResolvedValue(rows);
+  const limitSpy = vi.fn().mockResolvedValue(rows);
+  const orderBySpy = vi.fn().mockReturnValue({ limit: limitSpy });
+
   return {
     from: () => ({
       innerJoin: () => ({
