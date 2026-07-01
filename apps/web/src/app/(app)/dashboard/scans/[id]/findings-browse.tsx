@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import NextLink from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -217,7 +218,7 @@ export default function FindingsBrowse({ scanId, coverageOverall }: Props) {
     setAssetClassFilter(filters.assetClass);
     setStandardsFilter(filters.standards);
     setSelectedFindingId(null);
-    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+    router.replace((nextQueryString ? `${pathname}?${nextQueryString}` : pathname) as Route, { scroll: false });
   }
 
   if (findingsQuery.isLoading) {
