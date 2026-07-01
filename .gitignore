@@ -15,6 +15,9 @@ apps/web/src/routeTree.gen.ts
 .env
 .env*.local
 
+# Local-only dev tooling
+packages/db/src/seed.ts
+
 # IDEs and editors
 .vscode/*
 !.vscode/settings.json

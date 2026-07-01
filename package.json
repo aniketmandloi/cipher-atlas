@@ -16,7 +16,8 @@
     "db:push": "turbo -F @cipher-atlas/db db:push",
     "db:studio": "turbo -F @cipher-atlas/db db:studio",
     "db:generate": "turbo -F @cipher-atlas/db db:generate",
-    "db:migrate": "turbo -F @cipher-atlas/db db:migrate"
+    "db:migrate": "turbo -F @cipher-atlas/db db:migrate",
+    "db:seed": "turbo -F @cipher-atlas/db db:seed"
   },
   "dependencies": {
     "@cipher-atlas/env": "workspace:*",
