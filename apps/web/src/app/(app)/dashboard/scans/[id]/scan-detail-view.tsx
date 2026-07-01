@@ -89,28 +89,47 @@ function sliceActionableMessage(
 export default function ScanDetailView({ scanId }: Props) {
   const scanQuery = useQuery(trpc.scans.get.queryOptions({ id: scanId }));
   const exportPdfMutation = useMutation(trpc.reports.generatePdf.mutationOptions());
+  const exportCsvMutation = useMutation(trpc.reports.generateCsv.mutationOptions());
+
+  async function downloadReport(
+    result: { fileName: string; contentType: string; base64: string },
+  ) {
+    const bytes = Uint8Array.from(atob(result.base64), (char) => char.charCodeAt(0));
+    const blob = new Blob([bytes], { type: result.contentType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = result.fileName;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 0);
+  }
 
   async function handleExportPdf() {
     try {
       const result = await exportPdfMutation.mutateAsync({ scanId });
-      const bytes = Uint8Array.from(atob(result.base64), (char) => char.charCodeAt(0));
-      const blob = new Blob([bytes], { type: result.contentType });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = result.fileName;
-      anchor.style.display = "none";
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      window.setTimeout(() => {
-        URL.revokeObjectURL(url);
-      }, 0);
+      await downloadReport(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to export PDF report.";
       toast.error(message);
     } finally {
       exportPdfMutation.reset();
+    }
+  }
+
+  async function handleExportCsv() {
+    try {
+      const result = await exportCsvMutation.mutateAsync({ scanId });
+      await downloadReport(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to export CSV report.";
+      toast.error(message);
+    } finally {
+      exportCsvMutation.reset();
     }
   }
 
@@ -221,17 +240,30 @@ export default function ScanDetailView({ scanId }: Props) {
           <ScrollReveal delay={0.02}>
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium">Findings &amp; Report</p>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-full"
-                disabled={exportPdfMutation.isPending}
-                onClick={() => {
-                  void handleExportPdf();
-                }}
-              >
-                {exportPdfMutation.isPending ? "Generating PDF…" : "Export PDF"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  disabled={exportPdfMutation.isPending}
+                  onClick={() => {
+                    void handleExportPdf();
+                  }}
+                >
+                  {exportPdfMutation.isPending ? "Generating PDF…" : "Export PDF"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  disabled={exportCsvMutation.isPending}
+                  onClick={() => {
+                    void handleExportCsv();
+                  }}
+                >
+                  {exportCsvMutation.isPending ? "Generating CSV…" : "Export CSV"}
+                </Button>
+              </div>
             </div>
           </ScrollReveal>
           <FindingsBrowse scanId={scanId} coverageOverall={overall} />
