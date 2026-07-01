@@ -5,9 +5,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Badge } from "@cipher-atlas/ui/components/badge";
-import { Button } from "@cipher-atlas/ui/components/button";
+import { Button, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
-import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
 
 import { trpc } from "@/utils/trpc";
 import {
@@ -110,6 +109,8 @@ export default function ScanDetailView({ scanId }: Props) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to export PDF report.";
       toast.error(message);
+    } finally {
+      exportPdfMutation.reset();
     }
   }
 

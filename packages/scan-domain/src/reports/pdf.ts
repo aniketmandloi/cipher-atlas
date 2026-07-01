@@ -131,15 +131,16 @@ export async function renderReportPdf(model: ReportModel): Promise<Buffer> {
     if (model.findings.length === 0) {
       doc.font("Helvetica").fontSize(10).text("No findings in this snapshot.");
     } else {
+      const totalFindings = model.summary.totalFindings;
       const displayed = model.findings.slice(0, FINDINGS_TABLE_CAP);
-      const truncated = model.findings.length > FINDINGS_TABLE_CAP;
+      const truncated = totalFindings > FINDINGS_TABLE_CAP;
 
       if (truncated) {
         doc
           .font("Helvetica")
           .fontSize(9)
           .fillColor("#666666")
-          .text(`Showing first ${displayed.length} of ${model.findings.length}`);
+          .text(`Showing first ${displayed.length} of ${totalFindings}`);
         doc.fillColor("#000000");
         doc.moveDown(0.3);
       }

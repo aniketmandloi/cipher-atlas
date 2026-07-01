@@ -1,10 +1,11 @@
 import type { CoverageSummary, RedactedCoverageSlice } from "../orchestration/coverage";
-import type {
-  CoverageOverall,
-  ReportCoverageSlice,
-  ReportFindingRow,
-  ReportModel,
-  ReportSummary,
+import {
+  type CoverageOverall,
+  type ReportCoverageSlice,
+  type ReportFindingRow,
+  type ReportModel,
+  type ReportSummary,
+  reportModelSchema,
 } from "./contracts";
 
 export interface BuildReportModelFindingInput {
@@ -83,7 +84,7 @@ function mapFindingRow(finding: BuildReportModelFindingInput): ReportFindingRow 
 export function buildReportModel(input: BuildReportModelInput): ReportModel {
   const overall = input.coverageSummary.overall;
 
-  return {
+  return reportModelSchema.parse({
     scan: {
       id: input.scan.id,
       completedAt: input.scan.completedAt,
@@ -104,5 +105,5 @@ export function buildReportModel(input: BuildReportModelInput): ReportModel {
     },
     findings: input.findings.map(mapFindingRow),
     generatedAt: input.generatedAt,
-  };
+  });
 }

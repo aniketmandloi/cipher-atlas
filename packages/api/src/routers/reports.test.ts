@@ -1,10 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { selectMock, insertMock, loadCoverageMock } = vi.hoisted(() => ({
+const { selectMock, insertMock, loadCoverageMock, renderReportPdfMock } = vi.hoisted(() => ({
   selectMock: vi.fn(),
   insertMock: vi.fn(),
   loadCoverageMock: vi.fn(),
+  renderReportPdfMock: vi.fn(),
 }));
 
 vi.mock("@cipher-atlas/db", () => ({
@@ -17,6 +18,14 @@ vi.mock("@cipher-atlas/db", () => ({
 vi.mock("../lib/scan-coverage", () => ({
   loadScanCoverageForAttempt: loadCoverageMock,
 }));
+
+vi.mock("@cipher-atlas/scan-domain", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@cipher-atlas/scan-domain")>();
+  return {
+    ...actual,
+    renderReportPdf: renderReportPdfMock,
+  };
+});
 
 import { reportsRouter } from "./reports";
 
@@ -46,6 +55,8 @@ describe("reports router generatePdf", () => {
         onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
       }),
     });
+    renderReportPdfMock.mockReset();
+    renderReportPdfMock.mockResolvedValue(Buffer.from("%PDF-1.4"));
   });
 
   it("returns not found for missing or cross-tenant scan ids", async () => {
@@ -112,6 +123,17 @@ describe("reports router generatePdf", () => {
     expect(result.fileName).toBe("cipher-atlas-report-scan-1.pdf");
     expect(result.base64.length).toBeGreaterThan(0);
     expect(JSON.stringify(result)).not.toContain("metadata");
+
+    expect(renderReportPdfMock).toHaveBeenCalledTimes(1);
+    const reportModel = renderReportPdfMock.mock.calls[0]?.[0];
+    expect(reportModel).toBeDefined();
+    expect(JSON.stringify(reportModel)).not.toContain("must-not-leak");
+    expect(reportModel?.findings[0]).toEqual(
+      expect.objectContaining({
+        evidenceLocator: "s3://evidence/cert",
+      }),
+    );
+    expect(reportModel?.findings[0]).not.toHaveProperty("metadata");
 
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
