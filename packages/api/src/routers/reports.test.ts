@@ -1,11 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { selectMock, insertMock, loadCoverageMock, renderReportPdfMock } = vi.hoisted(() => ({
+const { selectMock, insertMock, loadCoverageMock, renderReportPdfMock, renderReportCsvMock } = vi.hoisted(() => ({
   selectMock: vi.fn(),
   insertMock: vi.fn(),
   loadCoverageMock: vi.fn(),
   renderReportPdfMock: vi.fn(),
+  renderReportCsvMock: vi.fn(),
 }));
 
 vi.mock("@cipher-atlas/db", () => ({
@@ -24,6 +25,7 @@ vi.mock("@cipher-atlas/scan-domain", async (importOriginal) => {
   return {
     ...actual,
     renderReportPdf: renderReportPdfMock,
+    renderReportCsv: renderReportCsvMock,
   };
 });
 
@@ -57,6 +59,8 @@ describe("reports router generatePdf", () => {
     });
     renderReportPdfMock.mockReset();
     renderReportPdfMock.mockResolvedValue(Buffer.from("%PDF-1.4"));
+    renderReportCsvMock.mockReset();
+    renderReportCsvMock.mockReturnValue(Buffer.from("scan_id,snapshot_id\r\n"));
   });
 
   it("returns not found for missing or cross-tenant scan ids", async () => {
@@ -146,6 +150,156 @@ describe("reports router generatePdf", () => {
     );
     expect(onConflictDoUpdate).toHaveBeenCalledTimes(1);
     expect(loadCoverageMock).toHaveBeenCalledWith("scan-1", "attempt-1");
+  });
+});
+
+describe("reports router generateCsv", () => {
+  beforeEach(() => {
+    selectMock.mockReset();
+    insertMock.mockReset();
+    loadCoverageMock.mockReset();
+    loadCoverageMock.mockResolvedValue({
+      coverageSlices: [],
+      coverageSummary: {
+        overall: "full",
+        counts: {
+          completed: 1,
+          partial: 0,
+          failed: 0,
+          skipped: 0,
+          unsupported: 0,
+        },
+        total: 1,
+      },
+    });
+    insertMock.mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+      }),
+    });
+    renderReportCsvMock.mockReset();
+    renderReportCsvMock.mockReturnValue(Buffer.from("scan_id,snapshot_id\r\n"));
+  });
+
+  it("returns not found for missing or cross-tenant scan ids", async () => {
+    selectMock.mockReturnValueOnce(selectLimitRows([]));
+
+    await expect(createCaller("user-1").generateCsv({ scanId: "scan-other-tenant" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Scan not found",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("returns bad request for a non-completed scan", async () => {
+    selectMock.mockReturnValueOnce(
+      selectLimitRows([
+        {
+          id: "scan-1",
+          status: "running",
+          completedAt: null,
+        },
+      ]),
+    );
+
+    await expect(createCaller("user-1").generateCsv({ scanId: "scan-1" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "A report can be exported only after a scan completes.",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("returns not found for a completed scan with no snapshot", async () => {
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(selectLimitRows([]));
+
+    await expect(createCaller("user-1").generateCsv({ scanId: "scan-1" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Scan snapshot not found",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("returns a csv payload and upserts tenant-scoped artifact metadata", async () => {
+    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    insertMock.mockReturnValue({ values });
+
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(
+        selectLimitRows([
+          {
+            id: "snapshot-1",
+            scanAttemptId: "attempt-1",
+            publishedAt: baseDate,
+            assetCount: 2,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(selectWhereRows([{ displayName: "GitHub Prod" }]))
+      .mockReturnValueOnce(selectWhereRows(facetRows()))
+      .mockReturnValueOnce(selectOrderByRowsWithoutLimit(findingRows()));
+
+    const result = await createCaller("user-1").generateCsv({ scanId: "scan-1" });
+
+    expect(result.contentType).toBe("text/csv; charset=utf-8");
+    expect(result.fileName).toBe("cipher-atlas-findings-scan-1.csv");
+    expect(result.base64.length).toBeGreaterThan(0);
+    expect(JSON.stringify(result)).not.toContain("metadata");
+
+    expect(renderReportCsvMock).toHaveBeenCalledTimes(1);
+    const reportModel = renderReportCsvMock.mock.calls[0]?.[0];
+    expect(reportModel).toBeDefined();
+    expect(JSON.stringify(reportModel)).not.toContain("must-not-leak");
+    expect(reportModel?.findings[0]).toEqual(
+      expect.objectContaining({
+        evidenceLocator: "s3://evidence/cert",
+      }),
+    );
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "user-1",
+        scanJobId: "scan-1",
+        snapshotId: "snapshot-1",
+        format: "csv",
+        generatedByUserId: "user-1",
+      }),
+    );
+    expect(onConflictDoUpdate).toHaveBeenCalledTimes(1);
+    expect(loadCoverageMock).toHaveBeenCalledWith("scan-1", "attempt-1");
+  });
+
+  it("does not cap csv findings at the pdf table limit", async () => {
+    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    insertMock.mockReturnValue({ values });
+
+    const manyFindings = Array.from({ length: 55 }, (_, index) => ({
+      ...findingRows()[0],
+      code: `finding_${index}`,
+      title: `Finding ${index}`,
+    }));
+
+    selectMock
+      .mockReturnValueOnce(selectLimitRows([completedScanRow()]))
+      .mockReturnValueOnce(
+        selectLimitRows([
+          {
+            id: "snapshot-1",
+            scanAttemptId: "attempt-1",
+            publishedAt: baseDate,
+            assetCount: 55,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(selectWhereRows([{ displayName: "GitHub Prod" }]))
+      .mockReturnValueOnce(selectWhereRows(facetRows()))
+      .mockReturnValueOnce(selectOrderByRowsWithoutLimit(manyFindings));
+
+    await createCaller("user-1").generateCsv({ scanId: "scan-1" });
+
+    const reportModel = renderReportCsvMock.mock.calls[0]?.[0];
+    expect(reportModel?.findings).toHaveLength(55);
   });
 });
 
@@ -249,6 +403,20 @@ function selectWhereRows(rows: unknown[]) {
 function selectOrderByRows(rows: unknown[]) {
   const limitSpy = vi.fn().mockResolvedValue(rows);
   const orderBySpy = vi.fn().mockReturnValue({ limit: limitSpy });
+
+  return {
+    from: () => ({
+      innerJoin: () => ({
+        where: () => ({
+          orderBy: orderBySpy,
+        }),
+      }),
+    }),
+  };
+}
+
+function selectOrderByRowsWithoutLimit(rows: unknown[]) {
+  const orderBySpy = vi.fn().mockResolvedValue(rows);
 
   return {
     from: () => ({

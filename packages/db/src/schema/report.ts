@@ -4,7 +4,7 @@ import { index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex } from "d
 import { user } from "./auth";
 import { scanSnapshot } from "./inventory";
 
-export const reportArtifactFormat = pgEnum("report_artifact_format", ["pdf"]);
+export const reportArtifactFormat = pgEnum("report_artifact_format", ["pdf", "csv"]);
 
 export const reportArtifact = pgTable(
   "report_artifact",
