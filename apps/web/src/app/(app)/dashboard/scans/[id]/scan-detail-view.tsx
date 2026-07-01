@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { Badge } from "@cipher-atlas/ui/components/badge";
+import { Button } from "@cipher-atlas/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
 import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useQuery } from "@tanstack/react-query";
@@ -87,6 +90,24 @@ function sliceActionableMessage(
 
 export default function ScanDetailView({ scanId }: Props) {
   const scanQuery = useQuery(trpc.scans.get.queryOptions({ id: scanId }));
+  const exportPdfMutation = useMutation(trpc.reports.generatePdf.mutationOptions());
+
+  async function handleExportPdf() {
+    try {
+      const result = await exportPdfMutation.mutateAsync({ scanId });
+      const bytes = Uint8Array.from(atob(result.base64), (char) => char.charCodeAt(0));
+      const blob = new Blob([bytes], { type: result.contentType });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to export PDF report.";
+      toast.error(message);
+    }
+  }
 
   if (scanQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading scan…</p>;
@@ -191,7 +212,25 @@ export default function ScanDetailView({ scanId }: Props) {
       )}
 
       {scan.status === "completed" && (
-        <FindingsBrowse scanId={scanId} coverageOverall={overall} />
+        <>
+          <ScrollReveal delay={0.02}>
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium">Findings &amp; Report</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full"
+                disabled={exportPdfMutation.isPending}
+                onClick={() => {
+                  void handleExportPdf();
+                }}
+              >
+                {exportPdfMutation.isPending ? "Generating PDF…" : "Export PDF"}
+              </Button>
+            </div>
+          </ScrollReveal>
+          <FindingsBrowse scanId={scanId} coverageOverall={overall} />
+        </>
       )}
 
       {/* Audit block */}

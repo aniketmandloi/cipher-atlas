@@ -36,6 +36,13 @@
       "when": 1782900000000,
       "tag": "0004_nist_mapping",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782891558350,
+      "tag": "0006_regular_wolfpack",
+      "breakpoints": true
     }
   ]
 }

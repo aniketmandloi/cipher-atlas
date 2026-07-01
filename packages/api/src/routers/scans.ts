@@ -1,14 +1,12 @@
 import { db } from "@cipher-atlas/db";
 import { connector } from "@cipher-atlas/db/schema/connector";
-import { coverageSlice, scanAttempt, scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
+import { scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
 import {
   connectorScanEligibility,
   createScanInputSchema,
   getScanInputSchema,
-  redactCoverageSlice,
   redactScanJob,
   summarizeCoverage,
-  type CoverageSliceRecord,
   type CoverageSummary,
   type RedactedCoverageSlice,
   type ScanConnectorScopeRecord,
@@ -20,6 +18,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 
 import { protectedProcedure, router } from "../index";
+import { loadScanCoverageForJobs } from "../lib/scan-coverage";
 import { tenantScope } from "../tenant";
 
 export const scansRouter = router({
@@ -160,8 +159,6 @@ export const scansRouter = router({
 
 type ScanJobRow = typeof scanJob.$inferSelect;
 type ScanConnectorRow = typeof scanJobConnector.$inferSelect;
-type ScanAttemptRow = typeof scanAttempt.$inferSelect;
-type CoverageSliceRow = typeof coverageSlice.$inferSelect;
 
 export interface HydratedScanJob {
   id: string;
@@ -190,31 +187,13 @@ async function hydrateScanJobs(
 
   const scanIds = rows.map((row) => row.id);
 
-  const [scopeRows, attemptRows] = await Promise.all([
-    db.select().from(scanJobConnector).where(inArray(scanJobConnector.scanJobId, scanIds)),
-    db.select().from(scanAttempt).where(inArray(scanAttempt.scanJobId, scanIds)),
-  ]);
-
-  const latestAttemptIdByScanId = groupLatestAttemptIds(attemptRows);
-  const latestAttemptIds = [...latestAttemptIdByScanId.values()];
-  const scanIdByLatestAttemptId = new Map(
-    [...latestAttemptIdByScanId].map(([scanJobId, attemptId]) => [attemptId, scanJobId]),
-  );
-
-  const sliceRows =
-    latestAttemptIds.length > 0
-      ? await db
-          .select()
-          .from(coverageSlice)
-          .where(inArray(coverageSlice.scanAttemptId, latestAttemptIds))
-          .orderBy(coverageSlice.connectorDisplayName, coverageSlice.id)
-      : [];
-  const latestSliceRows = sliceRows.filter(
-    (row) => scanIdByLatestAttemptId.get(row.scanAttemptId) === row.scanJobId,
-  );
+  const scopeRows = await db
+    .select()
+    .from(scanJobConnector)
+    .where(inArray(scanJobConnector.scanJobId, scanIds));
 
   const scopesByScanId = groupConnectorScopes(scopeRows);
-  const slicesByScanId = groupCoverageSlices(latestSliceRows);
+  const coverageByScanId = await loadScanCoverageForJobs(scanIds);
 
   return rows.map((row) => {
     const redacted = redactScanJob({
@@ -232,14 +211,15 @@ async function hydrateScanJobs(
       connectors: scopesByScanId.get(row.id) ?? [],
     } satisfies ScanJobRecord);
 
-    const rawSlices = slicesByScanId.get(row.id) ?? [];
-    const redactedSlices = rawSlices.map(redactCoverageSlice);
-    const summary = summarizeCoverage(rawSlices);
+    const coverage = coverageByScanId.get(row.id) ?? {
+      coverageSlices: [],
+      coverageSummary: summarizeCoverage([]),
+    };
 
     return {
       ...redacted,
-      ...(options.includeCoverageSlices ? { coverageSlices: redactedSlices } : {}),
-      coverageSummary: summary,
+      ...(options.includeCoverageSlices ? { coverageSlices: coverage.coverageSlices } : {}),
+      coverageSummary: coverage.coverageSummary,
     };
   });
 }
@@ -261,45 +241,4 @@ function groupConnectorScopes(rows: ScanConnectorRow[]): Map<string, ScanConnect
   }
 
   return scopesByScanId;
-}
-
-function groupLatestAttemptIds(rows: ScanAttemptRow[]): Map<string, string> {
-  const latestByScanId = new Map<string, ScanAttemptRow>();
-
-  for (const row of rows) {
-    const current = latestByScanId.get(row.scanJobId);
-    if (!current || row.attemptNumber > current.attemptNumber) {
-      latestByScanId.set(row.scanJobId, row);
-    }
-  }
-
-  return new Map([...latestByScanId].map(([scanJobId, attempt]) => [scanJobId, attempt.id]));
-}
-
-function groupCoverageSlices(rows: CoverageSliceRow[]): Map<string, CoverageSliceRecord[]> {
-  const slicesByScanId = new Map<string, CoverageSliceRecord[]>();
-
-  for (const row of rows) {
-    const slices = slicesByScanId.get(row.scanJobId) ?? [];
-    slices.push({
-      id: row.id,
-      scanJobId: row.scanJobId,
-      scanAttemptId: row.scanAttemptId,
-      tenantId: row.tenantId,
-      connectorId: row.connectorId,
-      connectorDisplayName: row.connectorDisplayName,
-      sourceType: row.sourceType,
-      segmentLabel: row.segmentLabel,
-      coverageStatus: row.coverageStatus,
-      detailMessage: row.detailMessage,
-      startedAt: row.startedAt,
-      completedAt: row.completedAt,
-      failedAt: row.failedAt,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    });
-    slicesByScanId.set(row.scanJobId, slices);
-  }
-
-  return slicesByScanId;
 }

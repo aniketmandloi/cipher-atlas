@@ -6,4 +6,5 @@ export default defineConfig({
   outDir: "./dist",
   clean: true,
   noExternal: [/@cipher-atlas\/.*/],
+  external: ["pdfkit"],
 });

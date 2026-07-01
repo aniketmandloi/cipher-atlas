@@ -89,7 +89,7 @@ function emptyRiskLevelCounts(): Record<RiskLevel, number> {
   };
 }
 
-function projectEvidence(evidence: InventoryEvidenceEnvelope): ProjectedFindingEvidence {
+export function projectEvidence(evidence: InventoryEvidenceEnvelope): ProjectedFindingEvidence {
   const projected: ProjectedFindingEvidence = {
     sourceRef: evidence.sourceRef,
     locator: evidence.locator,
@@ -105,7 +105,7 @@ function projectEvidence(evidence: InventoryEvidenceEnvelope): ProjectedFindingE
   return projected;
 }
 
-function buildFacetCounts(
+export function buildFacetCounts(
   rows: Array<{
     category: FindingCategory;
     sourceType: ConnectorSourceType;
