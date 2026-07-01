@@ -214,4 +214,31 @@ describe("renderReportCsv", () => {
     expect(rows[1]?.[14]).toBe("partial");
     expect(rows[2]?.[14]).toBe("partial");
   });
+
+  it("prefixes formula-triggering values to prevent spreadsheet injection", () => {
+    const csv = renderReportCsv(
+      baseModel({
+        findings: [
+          {
+            category: "certificate",
+            code: "certificate_expired",
+            title: "=1+1",
+            riskLevel: "high",
+            replacementPriority: "P1",
+            sourceType: "github",
+            sourceRef: "+cmd|calc",
+            assetIdentifier: "-2+3",
+            nistPrimaryReferenceId: "@SUM(A1:A9)",
+            nistMappingType: "direct",
+            evidenceLocator: "s3://evidence/cert",
+          },
+        ],
+      }),
+    ).toString("utf-8");
+
+    expect(csv).toContain("'=1+1");
+    expect(csv).toContain("'+cmd|calc");
+    expect(csv).toContain("'-2+3");
+    expect(csv).toContain("'@SUM(A1:A9)");
+  });
 });

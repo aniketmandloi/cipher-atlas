@@ -18,11 +18,19 @@ export const REPORT_CSV_HEADERS = [
   "coverage_overall",
 ] as const;
 
-function escapeCsvField(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+function preventFormulaInjection(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value)) {
+    return `'${value}`;
   }
   return value;
+}
+
+function escapeCsvField(value: string): string {
+  const sanitized = preventFormulaInjection(value);
+  if (/[",\r\n]/.test(sanitized)) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
+  }
+  return sanitized;
 }
 
 function formatCsvCell(value: string | null | undefined): string {
