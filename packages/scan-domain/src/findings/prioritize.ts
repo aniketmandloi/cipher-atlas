@@ -10,6 +10,7 @@ const launchPrioritizationMatrix: Record<
   dependency_vulnerable_package: { riskLevel: "high", replacementPriority: "P2" },
   tls_weak_cipher: { riskLevel: "medium", replacementPriority: "P3" },
   certificate_expiring_soon: { riskLevel: "medium", replacementPriority: "P3" },
+  certificate_quantum_vulnerable_key: { riskLevel: "high", replacementPriority: "P2" },
 };
 
 const riskLevelRank: Record<RiskLevel, number> = {

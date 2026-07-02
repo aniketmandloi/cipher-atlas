@@ -129,6 +129,10 @@
   html {
     @apply font-sans;
   }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 }
 
 /* ── Marketing utilities (shared across landing-page variants) ───────────── */

@@ -1,5 +1,6 @@
 import { db } from "@cipher-atlas/db";
 import { connector } from "@cipher-atlas/db/schema/connector";
+import { scanJob, scanJobConnector } from "@cipher-atlas/db/schema/scan";
 import { env } from "@cipher-atlas/env/server";
 import {
   awsCredentialSchema,
@@ -181,6 +182,45 @@ export const connectorsRouter = router({
     }
 
     return redactConnector(updated);
+  }),
+
+  remove: protectedProcedure.input(getConnectorInput).mutation(async ({ ctx, input }) => {
+    const tenantId = tenantScope(ctx.session.user.id);
+    const row = await findTenantConnector(input.id, ctx.session.user.id);
+
+    if (!row) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Connector not found",
+      });
+    }
+
+    const usageRows = await db
+      .select({ scanJobId: scanJobConnector.scanJobId, status: scanJob.status })
+      .from(scanJobConnector)
+      .innerJoin(scanJob, eq(scanJobConnector.scanJobId, scanJob.id))
+      .where(and(eq(scanJobConnector.connectorId, row.id), eq(scanJobConnector.tenantId, tenantId)))
+      .limit(10);
+
+    if (usageRows.some((usage) => usage.status === "queued" || usage.status === "running")) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "This connector is used by a queued or running scan. Wait for it to finish before deleting.",
+      });
+    }
+
+    // scan_job_connector restricts connector deletion to preserve scan provenance.
+    if (usageRows.length > 0) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "This connector is referenced by scan history and cannot be deleted. Its credentials stay encrypted; recreate a new connector if the credentials changed.",
+      });
+    }
+
+    await db.delete(connector).where(and(eq(connector.id, row.id), eq(connector.tenantId, tenantId)));
+
+    return { id: row.id };
   }),
 });
 

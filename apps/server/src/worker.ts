@@ -11,9 +11,12 @@ import {
   launchObservationCollector,
   normalizeObservations,
   redactEvidenceText,
+  type ConnectorCollectionResult,
   type CoverageSliceRecord,
   type AssetRecord,
   type Finding,
+  type Observation,
+  type ObservationCollector,
 } from "@cipher-atlas/scan-domain";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -28,7 +31,10 @@ export interface ProcessNextScanJobOptions {
   failConnectorIds?: string[];
   now?: Date;
   maxClaimAttempts?: number;
+  collector?: ObservationCollector;
 }
+
+const COLLECTOR_TIMEOUT_MS = 60_000;
 
 export interface ProcessedScanJob {
   scanJobId: string;
@@ -66,34 +72,104 @@ export async function processNextScanJob(
       .from(scanJobConnector)
       .where(eq(scanJobConnector.scanJobId, claim.scanJobId));
 
-    const finishedAt = options.now ?? new Date();
+    const collector = options.collector ?? launchObservationCollector;
     const failConnectorIds = new Set(options.failConnectorIds ?? []);
     const jobFailMessage = options.failWithMessage
       ? sanitizeScanFailureMessage(new Error(options.failWithMessage))
       : undefined;
+    const snapshotId = randomUUID();
 
-    const slices = connectorRows.map((row) =>
-      buildCoverageSlice({
+    const collectableRows = connectorRows.filter(
+      (row) => jobFailMessage === undefined && !failConnectorIds.has(row.connectorId),
+    );
+    const credentialRows = await loadConnectorCredentials(
+      collectableRows.map((row) => row.connectorId),
+      claim.tenantId,
+    );
+
+    const results = new Map<string, ConnectorCollectionResult>();
+
+    for (const row of connectorRows) {
+      if (jobFailMessage !== undefined || failConnectorIds.has(row.connectorId)) {
+        results.set(row.connectorId, {
+          observations: [],
+          coverageStatus: "failed",
+          detailMessage:
+            jobFailMessage ??
+            `Connector ${row.displayName} failed during scan. Re-check connector access, validate read scope, and retry the scan.`,
+        });
+        continue;
+      }
+
+      const credentialRow = credentialRows.get(row.connectorId);
+      if (!credentialRow) {
+        results.set(row.connectorId, {
+          observations: [],
+          coverageStatus: "failed",
+          detailMessage: `Credentials for connector ${row.displayName} could not be loaded. Re-create the connector and retry the scan.`,
+        });
+        continue;
+      }
+
+      try {
+        const decryptedCredentials = decryptConnectorCredentials(
+          credentialRow.credentialCiphertext,
+          env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY,
+        );
+        const result = await collector.collectObservations(
+          {
+            tenantId: claim.tenantId,
+            snapshotId,
+            scanJobId: claim.scanJobId,
+            scanAttemptId: claim.attemptId,
+            connectorId: row.connectorId,
+            connectorDisplayName: row.displayName,
+            sourceType: row.sourceType,
+            capturedAt: options.now ?? new Date(),
+          },
+          decryptedCredentials,
+          { signal: AbortSignal.timeout(COLLECTOR_TIMEOUT_MS) },
+        );
+        results.set(row.connectorId, result);
+      } catch (error) {
+        results.set(row.connectorId, {
+          observations: [],
+          coverageStatus: "failed",
+          detailMessage: sanitizeScanFailureMessage(error),
+        });
+      }
+    }
+
+    const finishedAt = options.now ?? new Date();
+    const slices = connectorRows.map((row) => {
+      const result = results.get(row.connectorId);
+      return buildCoverageSlice({
         claim,
         row,
         startedAt: claim.claimedAt,
         finishedAt,
-        shouldFail: jobFailMessage !== undefined || failConnectorIds.has(row.connectorId),
-        detailMessage:
-          jobFailMessage ??
-          `Connector ${row.displayName} failed during scan. Re-check connector access, validate read scope, and retry the scan.`,
-      }),
-    );
+        coverageStatus: result?.coverageStatus ?? "failed",
+        detailMessage: result?.detailMessage ?? null,
+      });
+    });
 
     const terminalStatus = deriveScanTerminalStatus(slices);
 
     if (terminalStatus === "completed") {
-      const snapshotPublication = await buildSnapshotPublication({
-        claim,
-        connectorRows,
-        slices,
-        finishedAt,
-      });
+      const observations: Observation[] = [];
+      for (const row of connectorRows) {
+        const result = results.get(row.connectorId);
+        if (result && result.coverageStatus !== "failed") {
+          observations.push(...result.observations);
+        }
+      }
+
+      const assets = normalizeObservations(observations);
+      const snapshotPublication: SnapshotPublication = {
+        snapshotId,
+        assets,
+        findings: deriveFindings(assets, { now: finishedAt }),
+      };
       await finalizeScanJobWithCoverage(
         claim,
         finishedAt,
@@ -106,7 +182,9 @@ export async function processNextScanJob(
     }
 
     const failureMessage =
-      jobFailMessage ?? "Scan failed. One or more connectors could not be scanned.";
+      jobFailMessage ??
+      slices.find((slice) => slice.coverageStatus === "failed")?.detailMessage ??
+      "Scan failed. One or more connectors could not be scanned.";
     await finalizeScanJobWithCoverage(claim, finishedAt, slices, "failed", failureMessage);
     return { scanJobId: claim.scanJobId, attemptId: claim.attemptId, status: "failed" };
   } catch (error) {
@@ -124,7 +202,7 @@ export async function processNextScanJob(
         row,
         startedAt: claim.claimedAt,
         finishedAt,
-        shouldFail: true,
+        coverageStatus: "failed",
         detailMessage: failureMessage,
       }),
     );
@@ -209,15 +287,15 @@ function buildCoverageSlice({
   row,
   startedAt,
   finishedAt,
-  shouldFail,
+  coverageStatus,
   detailMessage,
 }: {
   claim: ClaimedScanJob;
   row: ScanJobConnectorRow;
   startedAt: Date;
   finishedAt: Date;
-  shouldFail: boolean;
-  detailMessage: string;
+  coverageStatus: "completed" | "partial" | "failed";
+  detailMessage: string | null;
 }): CoverageSliceRecord {
   return {
     id: randomUUID(),
@@ -228,11 +306,11 @@ function buildCoverageSlice({
     connectorDisplayName: row.displayName,
     sourceType: row.sourceType,
     segmentLabel: null,
-    coverageStatus: shouldFail ? "failed" : "completed",
-    detailMessage: shouldFail ? sanitizeScanFailureMessage(detailMessage) : null,
+    coverageStatus,
+    detailMessage: detailMessage ? sanitizeScanFailureMessage(detailMessage) : null,
     startedAt,
-    completedAt: shouldFail ? null : finishedAt,
-    failedAt: shouldFail ? finishedAt : null,
+    completedAt: coverageStatus === "failed" ? null : finishedAt,
+    failedAt: coverageStatus === "failed" ? finishedAt : null,
     createdAt: finishedAt,
     updatedAt: finishedAt,
   };
@@ -372,65 +450,6 @@ interface SnapshotPublication {
   snapshotId: string;
   assets: AssetRecord[];
   findings: Finding[];
-}
-
-async function buildSnapshotPublication({
-  claim,
-  connectorRows,
-  slices,
-  finishedAt,
-}: {
-  claim: ClaimedScanJob;
-  connectorRows: ScanJobConnectorRow[];
-  slices: CoverageSliceRecord[];
-  finishedAt: Date;
-}): Promise<SnapshotPublication> {
-  const snapshotId = randomUUID();
-  const completedConnectorIds = new Set(
-    slices
-      .filter((slice) => slice.coverageStatus === "completed")
-      .map((slice) => slice.connectorId)
-      .filter((connectorId): connectorId is string => Boolean(connectorId)),
-  );
-  const completedConnectorRows = connectorRows.filter((row) => completedConnectorIds.has(row.connectorId));
-  const credentialRows = await loadConnectorCredentials([...completedConnectorIds], claim.tenantId);
-  const observations = [];
-
-  for (const row of completedConnectorRows) {
-    const credentialRow = credentialRows.get(row.connectorId);
-    if (!credentialRow) {
-      console.warn(`[worker] Credential row missing for connector ${row.connectorId} — skipping observation collection`);
-      continue;
-    }
-
-    const decryptedCredentials = decryptConnectorCredentials(
-      credentialRow.credentialCiphertext,
-      env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY,
-    );
-    observations.push(
-      ...(await launchObservationCollector.collectObservations(
-        {
-          tenantId: claim.tenantId,
-          snapshotId,
-          scanJobId: claim.scanJobId,
-          scanAttemptId: claim.attemptId,
-          connectorId: row.connectorId,
-          connectorDisplayName: row.displayName,
-          sourceType: row.sourceType,
-          capturedAt: finishedAt,
-        },
-        decryptedCredentials,
-      )),
-    );
-  }
-
-  const assets = normalizeObservations(observations);
-
-  return {
-    snapshotId,
-    assets,
-    findings: deriveFindings(assets, { now: finishedAt }),
-  };
 }
 
 async function loadConnectorCredentials(

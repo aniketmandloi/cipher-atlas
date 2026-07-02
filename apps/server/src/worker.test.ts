@@ -18,9 +18,43 @@ vi.mock("@cipher-atlas/env/server", () => ({
   },
 }));
 
-import { encryptConnectorCredentials } from "@cipher-atlas/scan-domain";
+import {
+  encryptConnectorCredentials,
+  type AssetClass,
+  type ObservationCollectionScope,
+  type ObservationCollector,
+} from "@cipher-atlas/scan-domain";
 
 import { processNextScanJob, sanitizeScanFailureMessage } from "./worker";
+
+function stubCollector(
+  build: (scope: ObservationCollectionScope) => Array<{
+    assetClass: AssetClass;
+    locator: string;
+    evidence: Record<string, unknown>;
+  }>,
+): ObservationCollector {
+  return {
+    collectObservations: async (scope) => ({
+      observations: build(scope).map((spec) => ({
+        tenantId: scope.tenantId,
+        snapshotId: scope.snapshotId,
+        scanJobId: scope.scanJobId,
+        scanAttemptId: scope.scanAttemptId,
+        connectorId: scope.connectorId,
+        connectorDisplayName: scope.connectorDisplayName,
+        sourceType: scope.sourceType,
+        sourceRef: `${scope.sourceType}:${scope.connectorId}`,
+        assetClass: spec.assetClass,
+        locator: spec.locator,
+        capturedAt: scope.capturedAt,
+        evidence: spec.evidence,
+      })),
+      coverageStatus: "completed",
+      detailMessage: null,
+    }),
+  };
+}
 
 describe("scan worker", () => {
   beforeEach(() => {
@@ -99,6 +133,24 @@ describe("scan worker", () => {
       workerId: "worker-1",
       maxClaimAttempts: 1,
       now: new Date("2026-06-29T12:00:00.000Z"),
+      collector: stubCollector((scope) => [
+        {
+          assetClass: "dependency",
+          locator: "github://dependency-manifests",
+          evidence: {
+            identifier: `${scope.connectorId}:github-dependency-manifests`,
+            observationKind: "dependency_manifest_scope",
+          },
+        },
+        {
+          assetClass: "hndl_signal",
+          locator: "github://repository-signals",
+          evidence: {
+            identifier: `${scope.connectorId}:github-hndl-signals`,
+            observationKind: "repository_hndl_signal_scope",
+          },
+        },
+      ]),
     });
 
     expect(result).toMatchObject({
@@ -215,6 +267,23 @@ describe("scan worker", () => {
       workerId: "worker-1",
       maxClaimAttempts: 1,
       now: new Date("2026-06-29T12:00:00.000Z"),
+      collector: stubCollector((scope) => [
+        {
+          assetClass: "certificate",
+          locator: "aws://acm/us-east-1/certificates",
+          evidence: { identifier: `${scope.connectorId}:aws-acm-certificates:us-east-1` },
+        },
+        {
+          assetClass: "tls_config",
+          locator: "aws://elb/us-east-1/listeners",
+          evidence: { identifier: `${scope.connectorId}:aws-elb-tls-listeners:us-east-1` },
+        },
+        {
+          assetClass: "hndl_signal",
+          locator: "aws://iam/us-east-1/crypto-signals",
+          evidence: { identifier: `${scope.connectorId}:aws-iam-hndl-signals:us-east-1` },
+        },
+      ]),
     });
 
     expect(result).toMatchObject({ scanJobId: "scan-1", status: "completed" });

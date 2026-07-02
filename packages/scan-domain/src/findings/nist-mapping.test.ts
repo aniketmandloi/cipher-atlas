@@ -12,6 +12,7 @@ describe("nistMappingForCode", () => {
       tls_weak_cipher: "direct",
       dependency_vulnerable_package: "interpretation",
       hndl_exposure: "interpretation",
+      certificate_quantum_vulnerable_key: "interpretation",
     };
 
     for (const code of findingCodes) {

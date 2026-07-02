@@ -13,6 +13,7 @@ import { Magnetic, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { ListSkeleton } from "@/components/list-skeleton";
 import { trpc } from "@/utils/trpc";
 import {
   connectorBlockedMessage,
@@ -30,7 +31,16 @@ export default function ScansView() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const connectorsQuery = useQuery(trpc.connectors.list.queryOptions());
-  const scansQuery = useQuery(trpc.scans.list.queryOptions());
+  const scansQuery = useQuery(
+    trpc.scans.list.queryOptions(undefined, {
+      refetchInterval: (query) =>
+        query.state.data?.some((scan) => scan.status === "queued" || scan.status === "running")
+          ? 3000
+          : false,
+    }),
+  );
+  const scanActive =
+    scansQuery.data?.some((scan) => scan.status === "queued" || scan.status === "running") ?? false;
 
   const launchMutation = useMutation(
     trpc.scans.create.mutationOptions({
@@ -73,9 +83,7 @@ export default function ScansView() {
         <div className="space-y-5">
           <p className="text-sm font-medium">Select Connectors</p>
 
-          {connectorsQuery.isLoading && (
-            <p className="text-sm text-muted-foreground">Loading connectors…</p>
-          )}
+          {connectorsQuery.isLoading && <ListSkeleton rows={2} rowHeight="h-12" />}
 
           {connectorsQuery.isError && (
             <div className="flex items-center gap-3">
@@ -198,10 +206,26 @@ export default function ScansView() {
       <ScrollReveal delay={0.08}>
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Scan History</p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-medium">Scan History</p>
+              {scanActive && (
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className="inline-flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400"
+                >
+                  <span className="relative flex size-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-60" />
+                    <span className="relative inline-flex size-2 rounded-full bg-blue-500" />
+                  </span>
+                  Live — updating
+                </span>
+              )}
+            </div>
             {scans.length > 0 && (
               <button
                 type="button"
+                aria-label="Refresh scan history"
                 onClick={() => void scansQuery.refetch()}
                 className="text-xs text-muted-foreground underline hover:text-foreground"
               >
@@ -210,9 +234,7 @@ export default function ScansView() {
             )}
           </div>
 
-          {scansQuery.isLoading && (
-            <p className="text-sm text-muted-foreground">Loading scans…</p>
-          )}
+          {scansQuery.isLoading && <ListSkeleton rows={3} rowHeight="h-32" />}
 
           {scansQuery.isError && (
             <div className="flex items-center gap-3">

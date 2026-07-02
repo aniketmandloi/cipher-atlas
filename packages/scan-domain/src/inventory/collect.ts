@@ -1,11 +1,11 @@
 import {
   awsCredentialSchema,
   githubCredentialSchema,
-  type AwsCredentials,
   type ConnectorSourceType,
-  type GitHubCredentials,
 } from "../connectors";
-import type { AssetClass, Observation } from "../shared";
+import type { Observation } from "../shared";
+import { collectAwsObservations } from "./collectors/aws";
+import { collectGitHubObservations } from "./collectors/github";
 
 export interface ObservationCollectionScope {
   tenantId: string;
@@ -18,88 +18,48 @@ export interface ObservationCollectionScope {
   capturedAt: Date;
 }
 
+export type ConnectorCoverageStatus = "completed" | "partial" | "failed";
+
+export interface ConnectorCollectionResult {
+  observations: Observation[];
+  coverageStatus: ConnectorCoverageStatus;
+  detailMessage: string | null;
+}
+
+export interface ObservationCollectorOptions {
+  signal?: AbortSignal;
+}
+
 export interface ObservationCollector {
   collectObservations(
     connectorScope: ObservationCollectionScope,
     decryptedCredentials: unknown,
-  ): Promise<Observation[]>;
+    options?: ObservationCollectorOptions,
+  ): Promise<ConnectorCollectionResult>;
 }
 
 export const launchObservationCollector: ObservationCollector = {
-  async collectObservations(connectorScope, decryptedCredentials) {
+  async collectObservations(connectorScope, decryptedCredentials, options) {
     if (connectorScope.sourceType === "github") {
-      return collectGitHubObservations(connectorScope, githubCredentialSchema.parse(decryptedCredentials));
+      return collectGitHubObservations(
+        connectorScope,
+        githubCredentialSchema.parse(decryptedCredentials),
+        { signal: options?.signal },
+      );
     }
 
     if (connectorScope.sourceType === "aws") {
-      return collectAwsObservations(connectorScope, awsCredentialSchema.parse(decryptedCredentials));
+      return collectAwsObservations(
+        connectorScope,
+        awsCredentialSchema.parse(decryptedCredentials),
+        { signal: options?.signal },
+      );
     }
 
-    throw new Error(`Unsupported connector source type for observation collection: ${connectorScope.sourceType}`);
+    return {
+      observations: [],
+      coverageStatus: "failed",
+      detailMessage: `Unsupported connector source type for observation collection: ${connectorScope.sourceType satisfies never}`,
+    };
   },
 };
-
-function collectGitHubObservations(
-  scope: ObservationCollectionScope,
-  _credentials: GitHubCredentials,
-): Observation[] {
-  return [
-    baseObservation(scope, "dependency", "github://dependency-manifests", {
-      identifier: `${scope.connectorId}:github-dependency-manifests`,
-      observationKind: "dependency_manifest_scope",
-      manifestSource: "github_repository_tree",
-      collectionBreadth: "representative_seam",
-    }),
-    baseObservation(scope, "hndl_signal", "github://repository-signals", {
-      identifier: `${scope.connectorId}:github-hndl-signals`,
-      observationKind: "repository_hndl_signal_scope",
-      collectionBreadth: "representative_seam",
-    }),
-  ];
-}
-
-function collectAwsObservations(scope: ObservationCollectionScope, credentials: AwsCredentials): Observation[] {
-  return [
-    baseObservation(scope, "certificate", `aws://acm/${credentials.region}/certificates`, {
-      identifier: `${scope.connectorId}:aws-acm-certificates:${credentials.region}`,
-      observationKind: "aws_acm_certificate_scope",
-      region: credentials.region,
-      collectionBreadth: "representative_seam",
-    }),
-    baseObservation(scope, "tls_config", `aws://elb/${credentials.region}/listeners`, {
-      identifier: `${scope.connectorId}:aws-elb-tls-listeners:${credentials.region}`,
-      observationKind: "aws_tls_listener_scope",
-      region: credentials.region,
-      collectionBreadth: "representative_seam",
-    }),
-    baseObservation(scope, "hndl_signal", `aws://iam/${credentials.region}/crypto-signals`, {
-      identifier: `${scope.connectorId}:aws-iam-hndl-signals:${credentials.region}`,
-      observationKind: "aws_hndl_signal_scope",
-      region: credentials.region,
-      collectionBreadth: "representative_seam",
-    }),
-  ];
-}
-
-function baseObservation(
-  scope: ObservationCollectionScope,
-  assetClass: AssetClass,
-  locator: string,
-  evidence: Record<string, unknown>,
-): Observation {
-  return {
-    tenantId: scope.tenantId,
-    snapshotId: scope.snapshotId,
-    scanJobId: scope.scanJobId,
-    scanAttemptId: scope.scanAttemptId,
-    connectorId: scope.connectorId,
-    connectorDisplayName: scope.connectorDisplayName,
-    sourceType: scope.sourceType,
-    sourceRef: `${scope.sourceType}:${scope.connectorId}`,
-    assetClass,
-    locator,
-    capturedAt: scope.capturedAt,
-    evidence,
-  };
-}
-

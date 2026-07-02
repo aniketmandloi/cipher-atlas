@@ -21,6 +21,9 @@ interface InventoryEvidenceEnvelope {
     notBefore: Date | string;
     notAfter: Date | string;
     fingerprint: string;
+    keyAlgorithm?: string;
+    keySize?: number;
+    namedCurve?: string;
   };
 }
 
@@ -39,6 +42,7 @@ export const findingCode = pgEnum("finding_code", [
   "tls_weak_cipher",
   "dependency_vulnerable_package",
   "hndl_exposure",
+  "certificate_quantum_vulnerable_key",
 ]);
 
 export const findingRiskLevel = pgEnum("finding_risk_level", ["critical", "high", "medium", "low"]);
@@ -84,10 +88,12 @@ export const finding = pgTable(
     index("finding_snapshot_risk_priority_idx").on(table.snapshotId, table.riskLevel, table.replacementPriority),
     check(
       "finding_category_code_match",
-      sql`(${table.category} = 'certificate' AND ${table.code} IN ('certificate_expired', 'certificate_expiring_soon'))
-          OR (${table.category} = 'tls' AND ${table.code} IN ('tls_outdated_protocol', 'tls_weak_cipher'))
-          OR (${table.category} = 'dependency' AND ${table.code} IN ('dependency_vulnerable_package'))
-          OR (${table.category} = 'hndl' AND ${table.code} IN ('hndl_exposure'))`,
+      // code is compared as text so freshly added enum values can be referenced in the
+      // same migration transaction that adds them (Postgres 55P04).
+      sql`(${table.category} = 'certificate' AND ${table.code}::text IN ('certificate_expired', 'certificate_expiring_soon', 'certificate_quantum_vulnerable_key'))
+          OR (${table.category} = 'tls' AND ${table.code}::text IN ('tls_outdated_protocol', 'tls_weak_cipher'))
+          OR (${table.category} = 'dependency' AND ${table.code}::text IN ('dependency_vulnerable_package'))
+          OR (${table.category} = 'hndl' AND ${table.code}::text IN ('hndl_exposure'))`,
     ),
   ],
 );

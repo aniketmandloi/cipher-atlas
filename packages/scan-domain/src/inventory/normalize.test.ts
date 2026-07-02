@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { launchObservationCollector } from "./collect";
+import { collectAwsObservations, type AwsCollectorOptions } from "./collectors/aws";
 import { normalizeObservations } from "./normalize";
 import { assetClasses, type Observation } from "../shared";
 
@@ -56,6 +56,8 @@ describe("normalizeObservations", () => {
     });
     expect(asset?.evidence.certificate?.notBefore.toISOString()).toBe("2026-06-29T14:04:21.000Z");
     expect(asset?.evidence.certificate?.notAfter.toISOString()).toBe("2026-07-29T14:04:21.000Z");
+    expect(asset?.evidence.certificate?.keyAlgorithm).toBe("rsa");
+    expect(asset?.evidence.certificate?.keySize).toBe(2048);
     expect(JSON.stringify(asset?.evidence)).not.toContain("ghp_1234567890abcdefghijklmnop");
     expect(asset?.evidence.redacted).toBe(true);
   });
@@ -74,46 +76,57 @@ describe("normalizeObservations", () => {
   });
 
   it("collects stable redaction-clean representative observations through the seam", async () => {
-    const first = await launchObservationCollector.collectObservations(
-      {
-        tenantId: "tenant-1",
-        snapshotId: "snapshot-1",
-        scanJobId: "scan-1",
-        scanAttemptId: "attempt-1",
-        connectorId: "connector-1",
-        connectorDisplayName: "AWS",
-        sourceType: "aws",
-        capturedAt: new Date("2026-06-29T12:00:00.000Z"),
-      },
-      {
-        accessKeyId: "AKIA1234567890ABCDEF",
-        secretAccessKey: "x".repeat(40),
-        sessionToken: "session-token",
-        region: "us-east-1",
-      },
-    );
-    const second = await launchObservationCollector.collectObservations(
-      {
-        tenantId: "tenant-1",
-        snapshotId: "snapshot-1",
-        scanJobId: "scan-1",
-        scanAttemptId: "attempt-1",
-        connectorId: "connector-1",
-        connectorDisplayName: "AWS",
-        sourceType: "aws",
-        capturedAt: new Date("2026-06-29T12:00:00.000Z"),
-      },
-      {
-        accessKeyId: "AKIA1234567890ABCDEF",
-        secretAccessKey: "x".repeat(40),
-        sessionToken: "session-token",
-        region: "us-east-1",
-      },
-    );
+    const scope = {
+      tenantId: "tenant-1",
+      snapshotId: "snapshot-1",
+      scanJobId: "scan-1",
+      scanAttemptId: "attempt-1",
+      connectorId: "connector-1",
+      connectorDisplayName: "AWS",
+      sourceType: "aws" as const,
+      capturedAt: new Date("2026-06-29T12:00:00.000Z"),
+    };
+    const credentials = {
+      accessKeyId: "AKIA1234567890ABCDEF",
+      secretAccessKey: "x".repeat(40),
+      sessionToken: "session-token",
+      region: "us-east-1",
+    };
+    const fakeClients: AwsCollectorOptions = {
+      createAcmClient: () => ({
+        send: async (command: unknown) => {
+          const name = (command as { constructor: { name: string } }).constructor.name;
+          if (name === "ListCertificatesCommand") {
+            return {
+              CertificateSummaryList: [
+                {
+                  CertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc",
+                  DomainName: "example.com",
+                  KeyAlgorithm: "RSA_2048",
+                },
+              ],
+            };
+          }
+          if (name === "GetCertificateCommand") {
+            return { Certificate: certificatePem };
+          }
+          throw new Error(`Unhandled command: ${name}`);
+        },
+        destroy: () => {},
+      }),
+      createElbv2Client: () => ({
+        send: async () => ({ LoadBalancers: [] }),
+        destroy: () => {},
+      }),
+    };
+
+    const first = await collectAwsObservations(scope, credentials, fakeClients);
+    const second = await collectAwsObservations(scope, credentials, fakeClients);
 
     expect(first).toEqual(second);
-    expect(JSON.stringify(normalizeObservations(first))).not.toContain("AKIA1234567890ABCDEF");
-    expect(JSON.stringify(normalizeObservations(first))).not.toContain("session-token");
+    expect(first.coverageStatus).toBe("completed");
+    expect(JSON.stringify(normalizeObservations(first.observations))).not.toContain("AKIA1234567890ABCDEF");
+    expect(JSON.stringify(normalizeObservations(first.observations))).not.toContain("session-token");
   });
 });
 

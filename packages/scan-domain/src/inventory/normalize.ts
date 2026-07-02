@@ -75,9 +75,27 @@ export function extractCertificateLifecycle(
       notBefore: new Date(certificate.validFrom),
       notAfter: new Date(certificate.validTo),
       fingerprint: certificate.fingerprint256,
+      ...extractPublicKeyDetails(certificate),
     };
   } catch {
     return null;
+  }
+}
+
+function extractPublicKeyDetails(
+  certificate: X509Certificate,
+): Pick<CertificateLifecycle, "keyAlgorithm" | "keySize" | "namedCurve"> {
+  try {
+    const publicKey = certificate.publicKey;
+    const details = publicKey.asymmetricKeyDetails;
+
+    return {
+      ...(publicKey.asymmetricKeyType ? { keyAlgorithm: publicKey.asymmetricKeyType } : {}),
+      ...(typeof details?.modulusLength === "number" ? { keySize: details.modulusLength } : {}),
+      ...(typeof details?.namedCurve === "string" ? { namedCurve: details.namedCurve } : {}),
+    };
+  } catch {
+    return {};
   }
 }
 

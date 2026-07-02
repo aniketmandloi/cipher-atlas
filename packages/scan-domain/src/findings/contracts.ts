@@ -14,6 +14,7 @@ export const findingCodes = [
   "tls_weak_cipher",
   "dependency_vulnerable_package",
   "hndl_exposure",
+  "certificate_quantum_vulnerable_key",
 ] as const;
 
 export const findingCodeSchema = z.enum(findingCodes);
@@ -49,6 +50,7 @@ const findingCodeCategoryMap: Record<(typeof findingCodes)[number], (typeof find
   tls_weak_cipher: "tls",
   dependency_vulnerable_package: "dependency",
   hndl_exposure: "hndl",
+  certificate_quantum_vulnerable_key: "certificate",
 };
 
 export const findingSchema = z

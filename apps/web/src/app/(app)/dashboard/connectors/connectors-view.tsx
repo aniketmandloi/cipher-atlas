@@ -2,6 +2,17 @@
 
 import { useState } from "react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@cipher-atlas/ui/components/alert-dialog";
 import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Button } from "@cipher-atlas/ui/components/motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
@@ -11,6 +22,8 @@ import { Magnetic, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { ListSkeleton } from "@/components/list-skeleton";
+import { toneBadgeProps, type ToneBadgeProps } from "@/lib/status-styles";
 import { trpc } from "@/utils/trpc";
 
 type SourceType = "github" | "aws";
@@ -18,22 +31,15 @@ type SourceType = "github" | "aws";
 type ConnectorStatus = "pending_validation" | "usable" | "invalid" | "unsupported";
 type ValidationStatus = "not_validated" | "valid" | "invalid" | "unsupported";
 
-function statusBadgeProps(status: ConnectorStatus): {
-  variant: "outline" | "destructive" | "secondary";
-  className?: string;
-} {
+function statusBadgeProps(status: ConnectorStatus): ToneBadgeProps {
   switch (status) {
     case "usable":
-      return {
-        variant: "outline",
-        className:
-          "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-      };
+      return toneBadgeProps("positive");
     case "pending_validation":
-      return { variant: "secondary" };
+      return toneBadgeProps("neutral");
     case "invalid":
     case "unsupported":
-      return { variant: "destructive" };
+      return toneBadgeProps("negative");
   }
 }
 
@@ -90,6 +96,18 @@ export default function ConnectorsView() {
 
   const createMutation = useMutation(
     trpc.connectors.create.mutationOptions({
+      onError: (err) => {
+        toast.error(err.message);
+      },
+    }),
+  );
+
+  const removeMutation = useMutation(
+    trpc.connectors.remove.mutationOptions({
+      onSuccess: () => {
+        void connectorsQuery.refetch();
+        toast.success("Connector deleted.");
+      },
       onError: (err) => {
         toast.error(err.message);
       },
@@ -154,9 +172,7 @@ export default function ConnectorsView() {
       {/* Connector list */}
       <ScrollReveal delay={0}>
         <div className="space-y-4">
-          {connectorsQuery.isLoading && (
-            <p className="text-sm text-muted-foreground">Loading connectors…</p>
-          )}
+          {connectorsQuery.isLoading && <ListSkeleton rows={2} rowHeight="h-40" />}
 
           {connectorsQuery.isError && (
             <div className="flex items-center gap-3">
@@ -217,7 +233,7 @@ export default function ConnectorsView() {
                     <p className="mt-0.5">{formatDate(c.lastValidatedAt)}</p>
                   </div>
                 </div>
-                <div className="pt-1">
+                <div className="flex items-center gap-2 pt-1">
                   <Magnetic strength={0.2}>
                     <Button
                       variant="outline"
@@ -231,6 +247,38 @@ export default function ConnectorsView() {
                         : "Validate"}
                     </Button>
                   </Magnetic>
+                  <AlertDialog>
+                    <AlertDialogTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          disabled={removeMutation.isPending}
+                          aria-label={`Delete connector ${c.displayName}`}
+                        >
+                          {removeMutation.isPending && removeMutation.variables?.id === c.id
+                            ? "Deleting…"
+                            : "Delete"}
+                        </Button>
+                      }
+                    />
+                    <AlertDialogContent className="rounded-xl">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete {c.displayName}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This permanently removes the connector and its encrypted credentials.
+                          Connectors referenced by scan history cannot be deleted.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => removeMutation.mutate({ id: c.id })}>
+                          Delete connector
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </CardContent>
             </Card>

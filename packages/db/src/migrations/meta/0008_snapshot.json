@@ -1,6 +1,6 @@
 {
-  "id": "83b64b29-d1ac-4146-aa7d-bb8d9192593a",
-  "prevId": "12b77668-a0c7-4361-86a3-c56cdbf31053",
+  "id": "cdb5a54e-017e-4b42-8e94-00c57f23e97d",
+  "prevId": "83b64b29-d1ac-4146-aa7d-bb8d9192593a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -797,7 +797,7 @@
       "checkConstraints": {
         "finding_category_code_match": {
           "name": "finding_category_code_match",
-          "value": "(\"finding\".\"category\" = 'certificate' AND \"finding\".\"code\" IN ('certificate_expired', 'certificate_expiring_soon'))\n          OR (\"finding\".\"category\" = 'tls' AND \"finding\".\"code\" IN ('tls_outdated_protocol', 'tls_weak_cipher'))\n          OR (\"finding\".\"category\" = 'dependency' AND \"finding\".\"code\" IN ('dependency_vulnerable_package'))\n          OR (\"finding\".\"category\" = 'hndl' AND \"finding\".\"code\" IN ('hndl_exposure'))"
+          "value": "(\"finding\".\"category\" = 'certificate' AND \"finding\".\"code\" IN ('certificate_expired', 'certificate_expiring_soon', 'certificate_quantum_vulnerable_key'))\n          OR (\"finding\".\"category\" = 'tls' AND \"finding\".\"code\" IN ('tls_outdated_protocol', 'tls_weak_cipher'))\n          OR (\"finding\".\"category\" = 'dependency' AND \"finding\".\"code\" IN ('dependency_vulnerable_package'))\n          OR (\"finding\".\"category\" = 'hndl' AND \"finding\".\"code\" IN ('hndl_exposure'))"
         }
       },
       "isRLSEnabled": false
@@ -2056,7 +2056,8 @@
         "tls_outdated_protocol",
         "tls_weak_cipher",
         "dependency_vulnerable_package",
-        "hndl_exposure"
+        "hndl_exposure",
+        "certificate_quantum_vulnerable_key"
       ]
     },
     "public.finding_risk_level": {

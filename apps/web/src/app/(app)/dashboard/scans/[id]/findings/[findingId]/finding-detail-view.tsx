@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/compo
 import { ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { useQuery } from "@tanstack/react-query";
 
+import { ListSkeleton } from "@/components/list-skeleton";
 import { trpc } from "@/utils/trpc";
 import { categoryLabel, assetClassLabel, nistMappingTypeBadgeVariant, nistMappingTypeLabel, replacementPriorityLabel, riskLevelBadgeVariant, riskLevelLabel } from "../../findings-labels";
 import { formatDate } from "../../../scans-utils";
@@ -28,7 +29,7 @@ export default function FindingDetailView({ scanId, findingId, browseFiltersQuer
   const backHref = `/dashboard/scans/${scanId}${browseFiltersQuery ? `?${browseFiltersQuery}` : ""}` as Href;
 
   if (findingQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading finding…</p>;
+    return <ListSkeleton rows={2} rowHeight="h-48" />;
   }
 
   if (findingQuery.isError) {

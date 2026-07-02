@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -8,6 +9,8 @@ import { Badge } from "@cipher-atlas/ui/components/badge";
 import { Button, ScrollReveal } from "@cipher-atlas/ui/components/motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@cipher-atlas/ui/components/card";
 
+import { ListSkeleton } from "@/components/list-skeleton";
+import { toneBadgeProps, type ToneBadgeProps } from "@/lib/status-styles";
 import { queryClient, trpc } from "@/utils/trpc";
 import {
   coverageBadgeProps,
@@ -26,27 +29,17 @@ interface Props {
 
 type CoverageStatus = "completed" | "partial" | "failed" | "skipped" | "unsupported";
 
-function coverageStatusBadgeProps(status: CoverageStatus): {
-  variant: "outline" | "destructive" | "secondary";
-  className?: string;
-} {
+function coverageStatusBadgeProps(status: CoverageStatus): ToneBadgeProps {
   switch (status) {
     case "completed":
-      return {
-        variant: "outline",
-        className:
-          "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-      };
+      return toneBadgeProps("positive");
     case "partial":
-      return {
-        variant: "outline",
-        className: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-      };
+      return toneBadgeProps("warning");
     case "failed":
-      return { variant: "destructive" };
+      return toneBadgeProps("negative");
     case "skipped":
     case "unsupported":
-      return { variant: "secondary" };
+      return toneBadgeProps("neutral");
   }
 }
 
@@ -97,7 +90,30 @@ function sliceActionableMessage(
 }
 
 export default function ScanDetailView({ scanId }: Props) {
-  const scanQuery = useQuery(trpc.scans.get.queryOptions({ id: scanId }));
+  const scanQuery = useQuery(
+    trpc.scans.get.queryOptions(
+      { id: scanId },
+      {
+        refetchInterval: (query) => {
+          const status = query.state.data?.status;
+          return status === "queued" || status === "running" ? 3000 : false;
+        },
+      },
+    ),
+  );
+
+  // When the scan reaches a terminal state, pull in the fresh findings and dashboard aggregates.
+  const previousStatusRef = useRef<string | undefined>(undefined);
+  const scanStatus = scanQuery.data?.status;
+  useEffect(() => {
+    const previous = previousStatusRef.current;
+    previousStatusRef.current = scanStatus;
+    if ((previous === "queued" || previous === "running") && scanStatus === "completed") {
+      void queryClient.invalidateQueries(trpc.findings.list.queryFilter());
+      void queryClient.invalidateQueries(trpc.dashboard.summary.queryFilter());
+    }
+  }, [scanStatus]);
+
   const exportPdfMutation = useMutation(trpc.reports.generatePdf.mutationOptions());
   const exportCsvMutation = useMutation(trpc.reports.generateCsv.mutationOptions());
   const artifactsQuery = useQuery({
@@ -154,7 +170,7 @@ export default function ScanDetailView({ scanId }: Props) {
   }
 
   if (scanQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading scan…</p>;
+    return <ListSkeleton rows={4} rowHeight="h-28" />;
   }
 
   if (scanQuery.isError) {
@@ -184,6 +200,20 @@ export default function ScanDetailView({ scanId }: Props) {
 
   return (
     <div className="space-y-10">
+      {(scan.status === "queued" || scan.status === "running") && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-3 rounded-xl border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-sm text-blue-600 dark:text-blue-400"
+        >
+          <span className="relative flex size-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-60" />
+            <span className="relative inline-flex size-2.5 rounded-full bg-blue-500" />
+          </span>
+          Scan {scan.status === "queued" ? "queued" : "in progress"} — this page updates automatically.
+        </div>
+      )}
+
       {/* Coverage banner */}
       {showCoverage && (
         <ScrollReveal delay={0}>

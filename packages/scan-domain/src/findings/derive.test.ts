@@ -58,6 +58,74 @@ describe("deriveFindings", () => {
     expect(JSON.stringify(findings)).not.toContain(SECRET_FIXTURE);
   });
 
+  it("derives quantum-vulnerable key findings for classical public-key algorithms", () => {
+    const now = new Date("2026-06-29T12:00:00.000Z");
+    const findings = deriveFindings(
+      [
+        asset({
+          id: "asset-rsa",
+          assetClass: "certificate",
+          evidence: evidence({
+            certificate: certificate({
+              subject: "CN=rsa.example",
+              notAfter: new Date("2027-06-29T00:00:00.000Z"),
+              keyAlgorithm: "rsa",
+              keySize: 2048,
+            }),
+          }),
+        }),
+        asset({
+          id: "asset-ed25519",
+          assetClass: "certificate",
+          evidence: evidence({
+            certificate: certificate({
+              subject: "CN=pqc-adjacent.example",
+              notAfter: new Date("2027-06-29T00:00:00.000Z"),
+              keyAlgorithm: "ed25519",
+            }),
+          }),
+        }),
+        asset({
+          id: "asset-expired-rsa",
+          assetClass: "certificate",
+          evidence: evidence({
+            certificate: certificate({
+              subject: "CN=expired-rsa.example",
+              notAfter: new Date("2026-06-01T00:00:00.000Z"),
+              keyAlgorithm: "rsa",
+            }),
+          }),
+        }),
+        asset({
+          id: "asset-acm-metadata",
+          assetClass: "certificate",
+          evidence: evidence({ metadata: { keyAlgorithm: "RSA_2048" } }),
+        }),
+      ],
+      { now },
+    );
+
+    const quantumFindings = findings.filter((f) => f.code === "certificate_quantum_vulnerable_key");
+    expect(quantumFindings.map((f) => f.assetId).sort()).toEqual(["asset-acm-metadata", "asset-rsa"]);
+    expect(quantumFindings[0]).toMatchObject({
+      category: "certificate",
+      title: "Quantum-vulnerable certificate key",
+      riskLevel: "high",
+      replacementPriority: "P2",
+    });
+
+    const rsaFinding = quantumFindings.find((f) => f.assetId === "asset-rsa");
+    expect(rsaFinding?.rationale).toContain("RSA 2048-bit");
+    expect(rsaFinding?.rationale).toContain("post-quantum");
+    expect(rsaFinding?.nistMapping?.references.map((r) => r.id)).toContain("NIST IR 8547");
+
+    // ed25519 is not Shor-vulnerable in the launch model; expired certs already demand replacement.
+    expect(findings.filter((f) => f.assetId === "asset-ed25519")).toHaveLength(0);
+    expect(findings.filter((f) => f.assetId === "asset-expired-rsa").map((f) => f.code)).toEqual([
+      "certificate_expired",
+    ]);
+  });
+
   it("derives TLS findings from outdated protocol and weak cipher posture", () => {
     const findings = deriveFindings(
       [

@@ -18,6 +18,9 @@ export const certificateLifecycleSchema = z.object({
   notBefore: z.date(),
   notAfter: z.date(),
   fingerprint: z.string(),
+  keyAlgorithm: z.string().optional(),
+  keySize: z.number().optional(),
+  namedCurve: z.string().optional(),
 });
 
 export const evidenceEnvelopeSchema = z.object({

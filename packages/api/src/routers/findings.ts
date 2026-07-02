@@ -15,7 +15,7 @@ import {
   type RiskLevel,
 } from "@cipher-atlas/scan-domain";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, eq, isNotNull, isNull, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, ilike, isNotNull, isNull, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
@@ -28,6 +28,7 @@ const listFindingsInputSchema = z.object({
   assetClass: assetClassSchema.optional(),
   riskLevel: riskLevelSchema.optional(),
   standardsRelevant: z.boolean().optional(),
+  search: z.string().trim().max(200).optional(),
   limit: z.number().int().min(1).max(100).default(50),
   offset: z.number().int().min(0).default(0),
 });
@@ -160,6 +161,7 @@ function buildFilterConditions(
     assetClass?: AssetClass;
     riskLevel?: RiskLevel;
     standardsRelevant?: boolean;
+    search?: string;
   },
 ): SQL[] {
   const conditions: SQL[] = [eq(finding.snapshotId, snapshotId), eq(finding.tenantId, tenantId)];
@@ -181,6 +183,17 @@ function buildFilterConditions(
   }
   if (filters.standardsRelevant === false) {
     conditions.push(isNull(finding.nistMapping));
+  }
+  if (filters.search) {
+    const pattern = `%${filters.search.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+    const searchCondition = or(
+      ilike(finding.title, pattern),
+      ilike(finding.rationale, pattern),
+      ilike(finding.sourceRef, pattern),
+    );
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
   }
 
   return conditions;
@@ -230,6 +243,7 @@ export const findingsRouter = router({
       assetClass: input.assetClass,
       riskLevel: input.riskLevel,
       standardsRelevant: input.standardsRelevant,
+      search: input.search || undefined,
     };
 
     if (!snapshotRow) {

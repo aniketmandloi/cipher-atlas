@@ -1,27 +1,19 @@
+import { toneBadgeProps, type ToneBadgeProps } from "@/lib/status-styles";
+
 export type ScanStatus = "queued" | "running" | "completed" | "failed";
 export type ConnectorStatus = "pending_validation" | "usable" | "invalid" | "unsupported";
 export type CoverageOverall = "full" | "partial" | "failed" | "empty";
 
-export function scanStatusBadgeProps(status: ScanStatus): {
-  variant: "outline" | "destructive" | "secondary";
-  className?: string;
-} {
+export function scanStatusBadgeProps(status: ScanStatus): ToneBadgeProps {
   switch (status) {
     case "queued":
-      return { variant: "secondary" };
+      return toneBadgeProps("neutral");
     case "running":
-      return {
-        variant: "outline",
-        className: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-      };
+      return toneBadgeProps("info");
     case "completed":
-      return {
-        variant: "outline",
-        className:
-          "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-      };
+      return toneBadgeProps("positive");
     case "failed":
-      return { variant: "destructive" };
+      return toneBadgeProps("negative");
   }
 }
 
@@ -38,26 +30,16 @@ export function scanStatusLabel(status: ScanStatus): string {
   }
 }
 
-export function coverageBadgeProps(overall: CoverageOverall): {
-  variant: "outline" | "destructive" | "secondary";
-  className?: string;
-} {
+export function coverageBadgeProps(overall: CoverageOverall): ToneBadgeProps {
   switch (overall) {
     case "full":
-      return {
-        variant: "outline",
-        className:
-          "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-      };
+      return toneBadgeProps("positive");
     case "partial":
-      return {
-        variant: "outline",
-        className: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-      };
+      return toneBadgeProps("warning");
     case "failed":
-      return { variant: "destructive" };
+      return toneBadgeProps("negative");
     case "empty":
-      return { variant: "secondary" };
+      return toneBadgeProps("neutral");
   }
 }
 

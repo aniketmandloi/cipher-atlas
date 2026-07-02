@@ -39,7 +39,10 @@ const findingCodeToCategory: Record<FindingCode, FindingCategory> = {
   tls_weak_cipher: "tls",
   dependency_vulnerable_package: "dependency",
   hndl_exposure: "hndl",
+  certificate_quantum_vulnerable_key: "certificate",
 };
+
+const quantumVulnerableKeyAlgorithms = ["rsa", "ec", "dsa"] as const;
 
 export function deriveFindings(assets: AssetRecord[], context: { now: Date }): Finding[] {
   const findings: DerivedFindingDraft[] = [];
@@ -72,47 +75,88 @@ export function deriveFindings(assets: AssetRecord[], context: { now: Date }): F
 }
 
 function deriveCertificateFindings(asset: AssetRecord, now: Date): DerivedFindingDraft[] {
+  const findings: DerivedFindingDraft[] = [];
   const certificate = asset.evidence.certificate;
   const notAfter = coerceDate(certificate?.notAfter);
+  const expired = certificate !== undefined && notAfter !== null && notAfter.getTime() <= now.getTime();
 
-  if (!certificate || !notAfter) {
-    return [];
+  if (certificate && notAfter) {
+    if (expired) {
+      findings.push(
+        finding(asset, {
+          code: "certificate_expired",
+          title: "Certificate expired",
+          rationale: certificateRationale(
+            asset,
+            certificate,
+            notAfter,
+            `expired on ${formatDate(notAfter)}`,
+          ),
+          detectedAt: now,
+        }),
+      );
+    } else if (notAfter.getTime() - now.getTime() <= CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS * DAY_MS) {
+      findings.push(
+        finding(asset, {
+          code: "certificate_expiring_soon",
+          title: "Certificate expiring soon",
+          rationale: certificateRationale(
+            asset,
+            certificate,
+            notAfter,
+            `expires within ${CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS} days on ${formatDate(notAfter)}`,
+          ),
+          detectedAt: now,
+        }),
+      );
+    }
   }
 
-  if (notAfter.getTime() <= now.getTime()) {
-    return [
-      finding(asset, {
-        code: "certificate_expired",
-        title: "Certificate expired",
-        rationale: certificateRationale(
-          asset,
-          certificate,
-          notAfter,
-          `expired on ${formatDate(notAfter)}`,
-        ),
-        detectedAt: now,
-      }),
-    ];
+  // Expired certificates already demand replacement — the quantum finding would only add noise.
+  if (!expired) {
+    const keyAlgorithm = quantumVulnerableKeyAlgorithm(asset);
+    if (keyAlgorithm) {
+      findings.push(
+        finding(asset, {
+          code: "certificate_quantum_vulnerable_key",
+          title: "Quantum-vulnerable certificate key",
+          rationale: quantumVulnerableKeyRationale(asset, keyAlgorithm),
+          detectedAt: now,
+        }),
+      );
+    }
   }
 
-  const expiresInMs = notAfter.getTime() - now.getTime();
-  if (expiresInMs <= CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS * DAY_MS) {
-    return [
-      finding(asset, {
-        code: "certificate_expiring_soon",
-        title: "Certificate expiring soon",
-        rationale: certificateRationale(
-          asset,
-          certificate,
-          notAfter,
-          `expires within ${CERTIFICATE_EXPIRING_SOON_WINDOW_DAYS} days on ${formatDate(notAfter)}`,
-        ),
-        detectedAt: now,
-      }),
-    ];
+  return findings;
+}
+
+function quantumVulnerableKeyAlgorithm(asset: AssetRecord): string | null {
+  const raw =
+    asset.evidence.certificate?.keyAlgorithm ?? firstString(asset.evidence.metadata, ["keyAlgorithm"]);
+
+  if (!raw) {
+    return null;
   }
 
-  return [];
+  const normalized = raw.toLowerCase();
+  const matches = quantumVulnerableKeyAlgorithms.some(
+    (algorithm) =>
+      normalized === algorithm ||
+      normalized.startsWith(`${algorithm}_`) ||
+      normalized.startsWith(`${algorithm}-`),
+  );
+
+  return matches ? raw : null;
+}
+
+function quantumVulnerableKeyRationale(asset: AssetRecord, keyAlgorithm: string): string {
+  const certificate = asset.evidence.certificate;
+  const subject = certificate?.subject ?? asset.identifier ?? asset.id;
+  const keySize = certificate?.keySize;
+  const curve = certificate?.namedCurve;
+  const keyLabel = `${keyAlgorithm.toUpperCase()}${keySize ? ` ${keySize}-bit` : ""}${curve ? ` (${curve})` : ""}`;
+
+  return `Certificate ${subject} uses a ${keyLabel} public key, which a cryptographically relevant quantum computer can break via Shor's algorithm. Plan replacement toward NIST post-quantum standards (FIPS 203/204/205). Evidence locator: ${asset.evidence.locator}.`;
 }
 
 function deriveTlsFindings(asset: AssetRecord, now: Date): DerivedFindingDraft[] {

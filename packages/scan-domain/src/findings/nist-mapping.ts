@@ -67,6 +67,21 @@ const launchNistMappingMatrix: Record<FindingCode, NistMapping> = {
     summary:
       "Harvest-now-decrypt-later is a product-interpreted post-quantum migration risk; align long-lived confidentiality with the PQC transition direction rather than a single conformance statement.",
   },
+  certificate_quantum_vulnerable_key: {
+    mappingType: "interpretation",
+    references: [
+      {
+        id: "NIST IR 8547",
+        title: "Transition to Post-Quantum Cryptography Standards",
+      },
+      {
+        id: "NIST SP 800-131A Rev. 2",
+        title: "Transitioning the Use of Cryptographic Algorithms and Key Lengths",
+      },
+    ],
+    summary:
+      "RSA/EC/DSA public keys are breakable by a cryptographically relevant quantum computer; plan certificate replacement toward NIST post-quantum standards (FIPS 203/204/205).",
+  },
 };
 
 export function nistMappingForCode(code: FindingCode): NistMapping | null {
